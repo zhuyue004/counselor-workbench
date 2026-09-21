@@ -7,7 +7,7 @@ const app = document.querySelector('#app');
 const modalRoot = document.querySelector('#modal-root');
 const toastEl = document.querySelector('#toast');
 const inputs = { xlsx: document.querySelector('#xlsx-input'), photozip: document.querySelector('#photozip-input'), package: document.querySelector('#package-input') };
-let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', photoUrl = '', toastTimer;
+let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', photoUrl = '', toastTimer;
 const today = () => new Date().toISOString().slice(0, 10);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 const fmtDate = value => clean(value) ? esc(clean(value).slice(0, 10)) : '—';
@@ -18,6 +18,7 @@ const studentName = id => state.students[id] ? displayName(state.students[id].na
 const studentInitial = s => displayName(s?.name).slice(0, 1);
 const courseLabel = grade => grade.courseName || grade.courseCode || '未命名课程';
 const releases = [
+  { version: '1.0.7', updatedAt: '2026-09-21 16:45', notes: ['工作模块支持选择学生后直接新增成绩、资助及各类工作记录。', '完善待办筛选、资料完整度、导入反馈、备份状态和心理工作字段。'] },
   { version: '1.0.6', updatedAt: '2026-09-21 16:31', notes: ['底部导航调整为首页、学生、工作、待办和设置。', '新增工作中心，集中查看组织发展、学业成绩、资助、心理和家校联系。'] },
   { version: '1.0.5', updatedAt: '2026-09-21 16:24', notes: ['学生详情中的本人电话和家长电话支持点击拨号。'] },
   { version: '1.0.4', updatedAt: '2026-09-21 16:19', notes: ['“数据”模块改为“设置”。', '新增当前版本、更新时间和历史更新记录。'] },
@@ -85,8 +86,8 @@ function homeView() {
   const total = Object.keys(state.students).length, threshold = Number(state.settings.threshold || 1);
   const warnings = selectedTerm ? Object.keys(state.students).filter(id => gradeStats(state, id, selectedTerm).semester >= threshold) : [];
   const due = state.records.filter(r => r.todo && !r.done && r.dueDate && r.dueDate <= today()).sort((a,b) => a.dueDate.localeCompare(b.dueDate));
-  const recent = [...state.records].sort((a,b) => (b.date || '').localeCompare(a.date || '')).slice(0, 4);
-  return `<div class="hero"><div class="kicker">今天的工作概览</div><strong>${total} 名学生</strong><p>随时查询、记录与跟进</p></div><div class="stats"><button class="stat" data-view="students"><strong>${total}</strong><span>学生档案</span></button><button class="stat warn" data-view="alerts"><strong>${warnings.length}</strong><span>学业预警</span></button><button class="stat due" data-view="alerts"><strong>${due.length}</strong><span>到期待办</span></button></div><div class="section-title"><h2>优先跟进</h2><small>${selectedTerm ? esc(selectedTerm) : '尚无成绩数据'}</small></div><div class="panel list">${due.length ? due.slice(0, 4).map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">◷</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.todo)}</strong><small>到期 ${fmtDate(r.dueDate)} · ${esc(r.type)}</small></div><span class="badge red">待办</span></button>`).join('') : warnings.slice(0, 4).map(id => `<button class="list-row" data-student="${esc(id)}"><div class="avatar">${esc(studentInitial(state.students[id]))}</div><div class="row-main"><strong>${esc(studentName(id))} · 本学期挂科 ${gradeStats(state,id,selectedTerm).semester} 门</strong><small>${esc(state.students[id].className)} · ${esc(id)}</small></div><span class="badge">预警</span></button>`).join('') || empty('暂无待跟进事项', '导入成绩或添加带到期日期的工作记录后，会出现在这里。')}</div><div class="section-title"><h2>最近记录</h2><small>${state.records.length} 条</small></div><div class="panel list">${recent.length ? recent.map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">✎</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.type)}</strong><small>${fmtDate(r.date)} · ${esc(r.summary || '无摘要')}</small></div><span class="chevron">›</span></button>`).join('') : empty('还没有工作记录', '在学生档案中添加谈话或家校联系记录。')}</div>`;
+  const recent = [...state.records].sort((a,b) => (b.date || '').localeCompare(a.date || '')).slice(0, 4), incomplete = Object.values(state.students).filter(s => profileMissing(s).length);
+  return `<div class="hero"><div class="kicker">今日概览</div><strong>${total} 名学生</strong></div><div class="stats"><button class="stat" data-view="students"><strong>${total}</strong><span>学生档案</span></button><button class="stat warn" data-view="work"><strong>${warnings.length}</strong><span>学业预警</span></button><button class="stat due" data-view="alerts"><strong>${due.length}</strong><span>到期待办</span></button></div><div class="section-title"><h2>优先跟进</h2></div><div class="panel list">${due.length ? due.slice(0, 4).map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">◷</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.todo)}</strong><small>到期 ${fmtDate(r.dueDate)} · ${esc(r.type)}</small></div><span class="badge red">待办</span></button>`).join('') : empty('暂无待跟进事项')}</div><div class="section-title"><h2>资料待补</h2><small>${incomplete.length} 人</small></div><div class="panel list">${incomplete.length ? incomplete.slice(0,3).map(s => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(studentName(s.id))}</strong><small>缺少：${esc(profileMissing(s).join('、'))}</small></div><span class="chevron">›</span></button>`).join('') : empty('资料已完整')}</div><div class="section-title"><h2>最近记录</h2><small>${state.records.length} 条</small></div><div class="panel list">${recent.length ? recent.map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">✎</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.type)}</strong><small>${fmtDate(r.date)} · ${esc(r.summary || '无摘要')}</small></div><span class="chevron">›</span></button>`).join('') : empty('还没有工作记录')}</div>`;
 }
 function empty(title) { return `<div class="empty"><strong>${esc(title)}</strong></div>`; }
 function studentsView() {
@@ -95,6 +96,7 @@ function studentsView() {
   return `<div class="toolbar"><h2>学生档案 <span class="muted tiny">${filtered.length}</span></h2><button class="btn small" data-action="add-student">＋ 新增</button></div><div class="search-wrap"><input class="search" id="student-search" type="search" placeholder="搜索姓名、学号、班级、专业" value="${esc(search)}"></div><div class="panel list">${filtered.length ? filtered.map(s => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.className || '未分班')} · ${esc(s.id)} · ${esc(s.major)}</small></div><span class="chevron">›</span></button>`).join('') : empty(search ? '没有匹配的学生' : '还没有学生档案', search ? '试试学号或班级关键词。' : '可手工新增，或从固定 Excel 模板批量导入。')}</div>`;
 }
 const dialNumber = value => clean(value).replace(/[^\d+]/g, '');
+const profileMissing = student => ['姓名','班级','专业','宿舍','本人电话','家长电话','家庭住址','身份证号','证件照'].filter(label => ({ 姓名: student.name, 班级: student.className, 专业: student.major, 宿舍: student.dorm, 本人电话: student.phone, 家长电话: student.parentPhone, 家庭住址: student.address, 身份证号: student.idNumber, 证件照: student.photoId })[label] ? false : true);
 function infoItem(label, value) {
   const phone = ['本人电话', '家长电话'].includes(label) && dialNumber(value);
   const content = phone ? `<a class="phone-link" href="tel:${esc(phone)}">${esc(value)}</a>` : esc(value || '—');
@@ -124,8 +126,8 @@ async function loadPhoto(id) {
   catch (error) { notify(error.message,true); }
 }
 function alertsView() {
-  const due = state.records.filter(r => r.todo && !r.done).sort((a,b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
-  return `<div class="toolbar"><h2>待办</h2><small class="muted">${due.length} 项</small></div><div class="panel list">${due.length ? due.map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">✓</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.todo)}</strong><small>${r.dueDate ? `到期 ${fmtDate(r.dueDate)}` : '未设到期日'} · ${esc(r.type)}</small></div><span class="badge ${r.dueDate && r.dueDate <= today() ? 'red' : ''}">${r.dueDate && r.dueDate <= today() ? '已到期' : '待办'}</span></button>`).join('') : empty('暂无待办')}</div>`;
+  const all = state.records.filter(r => r.todo), due = all.filter(r => todoFilter === 'done' ? r.done : todoFilter === 'overdue' ? !r.done && r.dueDate && r.dueDate < today() : todoFilter === 'today' ? !r.done && r.dueDate === today() : !r.done).sort((a,b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
+  return `<div class="toolbar"><h2>待办</h2><small class="muted">${due.length} 项</small></div><div class="segmented todo-filter">${[['all','待处理'],['today','今日'],['overdue','已逾期'],['done','已完成']].map(([key,label]) => `<button data-action="todo-filter" data-filter="${key}" class="${todoFilter === key ? 'active' : ''}">${label}</button>`).join('')}</div><div class="panel list">${due.length ? due.map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">✓</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.todo)}</strong><small>${r.dueDate ? `到期 ${fmtDate(r.dueDate)}` : '未设到期日'} · ${esc(r.type)}</small></div><span class="badge ${r.done ? 'green' : r.dueDate && r.dueDate < today() ? 'red' : ''}">${r.done ? '已完成' : r.dueDate && r.dueDate < today() ? '已逾期' : '待办'}</span></button>`).join('') : empty('暂无待办')}</div>`;
 }
 
 const workModules = [
@@ -140,7 +142,7 @@ function workView() {
   return `<div class="toolbar"><h2>工作</h2></div><div class="work-grid">${workModules.map(([key, icon, label]) => `<button class="work-card" data-action="work-module" data-module="${key}"><span>${icon}</span><strong>${label}</strong><i>›</i></button>`).join('')}</div>`;
 }
 function workRecordList(type, emptyTitle) {
-  const records = state.records.filter(record => record.type === type).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  const query = clean(workSearch).toLowerCase(), records = state.records.filter(record => record.type === type && [studentName(record.studentId), state.students[record.studentId]?.className, record.date, record.summary, record.subject].some(value => clean(value).toLowerCase().includes(query))).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
   return `<div class="panel">${records.length ? records.map(record => `<button class="list-row" data-student="${esc(record.studentId)}"><div class="avatar">${type === '心理工作' ? '♡' : type === '组织发展' ? '◇' : '⌁'}</div><div class="row-main"><strong>${esc(studentName(record.studentId))}</strong><small>${fmtDate(record.date)} · ${esc(record.summary || '无摘要')}</small></div><span class="chevron">›</span></button>`).join('') : empty(emptyTitle)}</div>`;
 }
 function workDetailView() {
@@ -149,19 +151,20 @@ function workDetailView() {
   const [, , title] = module;
   let body = '';
   if (workModule === 'grades') {
-    const threshold = Number(state.settings.threshold || 1), warnings = selectedTerm ? Object.values(state.students).map(s => ({ s, count: gradeStats(state,s.id,selectedTerm).semester })).filter(item => item.count >= threshold).sort((a,b) => b.count - a.count) : [];
+    const query = clean(workSearch).toLowerCase(), threshold = Number(state.settings.threshold || 1), warnings = selectedTerm ? Object.values(state.students).map(s => ({ s, count: gradeStats(state,s.id,selectedTerm).semester })).filter(item => item.count >= threshold && [studentName(item.s.id), item.s.className, item.s.major].some(value => clean(value).toLowerCase().includes(query))).sort((a,b) => b.count - a.count) : [];
     body = `<div class="notice">本学期挂科达到 <strong>${threshold} 门</strong>时提醒。</div><div class="section-title"><h2>学业预警</h2><select id="term-select" class="mini-select"><option value="">选择学期</option>${terms(state).map(term => `<option value="${esc(term)}" ${term === selectedTerm ? 'selected' : ''}>${esc(term)}</option>`).join('')}</select></div><div class="panel list">${warnings.length ? warnings.map(({s,count}) => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(studentName(s.id))}</strong><small>${esc(s.className)} · 历史累计 ${gradeStats(state,s.id,selectedTerm).cumulative} 门</small></div><span class="badge red">${count} 门</span></button>`).join('') : empty('暂无学业预警')}</div>`;
   } else if (workModule === 'funding') {
-    const rows = [...state.funding].sort((a,b) => (b.paidAt || '').localeCompare(a.paidAt || ''));
+    const query = clean(workSearch).toLowerCase(), rows = state.funding.filter(item => [studentName(item.studentId), state.students[item.studentId]?.className, item.paidAt, item.program].some(value => clean(value).toLowerCase().includes(query))).sort((a,b) => (b.paidAt || '').localeCompare(a.paidAt || ''));
     body = `<div class="panel list">${rows.length ? rows.map(item => `<button class="list-row" data-student="${esc(item.studentId)}"><div class="avatar">¥</div><div class="row-main"><strong>${esc(studentName(item.studentId))} · ${esc(item.program || '资助项目')}</strong><small>${fmtDate(item.paidAt)} · ¥ ${esc(item.amount || '0')}</small></div><span class="chevron">›</span></button>`).join('') : empty('暂无资助记录')}</div>`;
   } else if (workModule === 'organization') body = workRecordList('组织发展', '暂无组织发展记录');
   else if (workModule === 'mental') body = workRecordList('心理工作', '暂无心理工作记录');
   else body = workRecordList('家校联系', '暂无家校联系记录');
-  return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2></div>${body}`;
+  const action = workModule === 'grades' ? 'work-add-grade' : workModule === 'funding' ? 'work-add-funding' : 'work-add-record';
+  return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2><button class="btn small" data-action="${action}" data-type="${esc(title)}">＋ 新增</button></div><div class="search-wrap"><input class="search" id="work-search" type="search" placeholder="搜索学生、班级、日期或内容" value="${esc(workSearch)}"></div>${body}`;
 }
 function dataView() {
   const current = releases[0];
-  return `<div class="toolbar"><h2>设置</h2></div><div class="section-title"><h2>本机解锁</h2></div><div class="panel"><div class="file-card"><h3>6 位数字密码</h3><button class="btn ghost" data-action="change-passcode">修改解锁密码</button></div></div><div class="section-title"><h2>Excel 模板</h2></div><div class="panel"><div class="file-card"><h3>空白固定模板</h3><button class="btn secondary" data-action="template">下载空白模板</button></div><div class="file-card"><h3>导入 Excel</h3><button class="btn secondary" data-action="import-xlsx">选择 Excel 文件</button></div><div class="file-card"><h3>导出当前数据</h3><button class="btn secondary" data-action="export-xlsx">导出 Excel</button></div></div><div class="section-title"><h2>照片与传输</h2></div><div class="panel"><div class="file-card"><h3>证件照批量导入</h3><button class="btn ghost" data-action="import-photos">选择照片 ZIP</button></div><div class="file-card"><h3>导出加密数据包</h3><button class="btn" data-action="export-package">生成传输包 / 备份</button></div><div class="file-card"><h3>导入加密数据包</h3><button class="btn ghost" data-action="import-package">选择数据包 ZIP</button></div></div><div class="section-title"><h2>版本</h2></div><button class="version-card" data-action="version-history"><span><strong>v${esc(APP_VERSION)}</strong><small>更新于 ${esc(current.updatedAt)}</small></span><span class="chevron">›</span></button>`;
+  return `<div class="toolbar"><h2>设置</h2></div><div class="section-title"><h2>本机解锁</h2></div><div class="panel"><div class="file-card"><h3>6 位数字密码</h3><button class="btn ghost" data-action="change-passcode">修改解锁密码</button></div></div><div class="section-title"><h2>Excel 模板</h2></div><div class="panel"><div class="file-card"><h3>空白固定模板</h3><button class="btn secondary" data-action="template">下载空白模板</button></div><div class="file-card"><h3>导入 Excel</h3><button class="btn secondary" data-action="import-xlsx">选择 Excel 文件</button></div><div class="file-card"><h3>导出当前数据</h3><button class="btn secondary" data-action="export-xlsx">导出 Excel</button></div></div><div class="section-title"><h2>照片与传输</h2></div><div class="panel"><div class="file-card"><h3>证件照批量导入</h3><button class="btn ghost" data-action="import-photos">选择照片 ZIP</button></div><div class="file-card"><h3>导出加密数据包</h3><p>上次备份：${state.settings.lastExportedAt ? esc(state.settings.lastExportedAt.replace('T',' ').slice(0,16)) : '尚未备份'}</p><button class="btn" data-action="export-package">生成传输包 / 备份</button></div><div class="file-card"><h3>导入加密数据包</h3><button class="btn ghost" data-action="import-package">选择数据包 ZIP</button></div></div><div class="section-title"><h2>版本</h2></div><button class="version-card" data-action="version-history"><span><strong>v${esc(APP_VERSION)}</strong><small>更新于 ${esc(current.updatedAt)}</small></span><span class="chevron">›</span></button>`;
 }
 
 function versionHistory() {
@@ -173,6 +176,8 @@ function render() {
   shell(body);
   const searchInput = document.querySelector('#student-search');
   if (searchInput) searchInput.addEventListener('input', event => { const pos = event.target.selectionStart; search = event.target.value; render(); const input = document.querySelector('#student-search'); input.focus(); input.setSelectionRange(pos,pos); });
+  const workInput = document.querySelector('#work-search');
+  if (workInput) workInput.addEventListener('input', event => { workSearch = event.target.value; render(); document.querySelector('#work-search')?.focus(); });
   document.querySelector('#term-select')?.addEventListener('change', event => { selectedTerm = event.target.value; render(); });
 }
 
@@ -186,6 +191,7 @@ function studentForm(existing) {
     selectedId = id; detailTab = 'info'; view = 'students'; await persist(); notify('档案已保存');
   });
 }
+function pickStudent(next) { showModal('选择学生', choose('学生','studentId',['', ...Object.values(state.students).sort((a,b) => studentName(a.id).localeCompare(studentName(b.id),'zh-CN')).map(s => `${s.id}｜${studentName(s.id)}`)], ''), '下一步', async form => { const id = clean(form.get('studentId')).split('｜')[0]; if (!state.students[id]) throw new Error('请选择学生'); selectedId = id; setTimeout(next, 0); }); }
 function gradeForm(existing) {
   const g = existing || {};
   showModal(existing ? '编辑成绩' : '添加成绩', `${field('学期 *','term',g.term || selectedTerm,'text','required placeholder="例如 2025-2026-2"')}${field('课程代码','courseCode',g.courseCode)}${field('课程名称 *','courseName',g.courseName,'text','required')}${field('成绩','score',g.score,'text','inputmode="decimal"')}${choose('是否挂科','failed',['自动判断','是','否'],g.failed || '自动判断')}${choose('补考或重修状态','retakeStatus',['未处理','补考中','重修中','补考通过','重修通过','已通过'],g.retakeStatus || '未处理')}${area('备注','note',g.note)}`, '保存成绩', async form => {
@@ -204,7 +210,7 @@ function fundingForm(existing) {
 }
 function recordForm(existing) {
   const r = existing || {};
-  showModal(existing ? '编辑工作记录' : '添加工作记录', `${choose('类型','type',['谈话','家校联系','组织发展','心理工作'],r.type)}${field('日期','date',r.date || today(),'date','required')}${field('对象','subject',r.subject,'text','placeholder="例如 学生本人 / 母亲"')}${area('摘要 *','summary',r.summary)}${area('后续待办','todo',r.todo)}${field('到期日期','dueDate',r.dueDate,'date')}${field('追加截图（可多选）','images','','file','accept="image/*" multiple')}`, '保存记录', async (form,data) => {
+  showModal(existing ? '编辑工作记录' : '添加工作记录', `${choose('类型','type',['谈话','家校联系','组织发展','心理工作'],r.type || (workModule === 'organization' ? '组织发展' : workModule === 'mental' ? '心理工作' : workModule === 'contact' ? '家校联系' : '谈话'))}${field('日期','date',r.date || today(),'date','required')}${field('对象','subject',r.subject,'text','placeholder="例如 学生本人 / 母亲"')}${field('关注等级','attention',r.attention)}${field('来源','source',r.source)}${area('摘要 *','summary',r.summary)}${area('后续待办','todo',r.todo)}${area('处理结论','outcome',r.outcome)}${field('到期日期','dueDate',r.dueDate,'date')}${field('追加截图（可多选）','images','','file','accept="image/*" multiple')}`, '保存记录', async (form,data) => {
     const summary = clean(form.get('summary')); if (!summary) throw new Error('请填写摘要');
     const id = uid(), date = clean(form.get('date')), type = clean(form.get('type')), s = student();
     const images = [...data.querySelector('[name=images]').files]; const attachments = [...(r.attachments || [])];
@@ -213,7 +219,7 @@ function recordForm(existing) {
       await putFile({ id: fileId, studentId: s.id, kind: 'screenshot', name: fileName(s, `${type}截图`, date, attachments.length+1, ext), type: image.type || 'image/jpeg', createdAt: now(), blob: image });
       attachments.push(fileId);
     }
-    const next = { ...r, id: r.id || id, studentId: s.id, type, date, subject: clean(form.get('subject')), summary, todo: clean(form.get('todo')), dueDate: clean(form.get('dueDate')), done: r.done || false, attachments, updatedAt: now() };
+    const next = { ...r, id: r.id || id, studentId: s.id, type, date, subject: clean(form.get('subject')), attention: clean(form.get('attention')), source: clean(form.get('source')), summary, todo: clean(form.get('todo')), outcome: clean(form.get('outcome')), dueDate: clean(form.get('dueDate')), done: r.done || false, attachments, updatedAt: now() };
     if (existing) Object.assign(existing,next); else state.records.push(next);
     await persist(); notify('工作记录已保存');
   });
@@ -238,7 +244,8 @@ function passwordForm(title, text, onPassword) { showModal(title, `${text ? `<p 
 async function importXlsx(file) {
   const workbook = await readWorkbook(file), preview = previewWorkbook(state, workbook);
   const c = preview.counts;
-  showModal('确认 Excel 导入', `<div class="notice">新增学生 ${c.students} 人、成绩 ${c.grades} 条、资助 ${c.funding} 条、工作记录 ${c.records} 条；更新 ${c.updated} 条。</div>${preview.errors.length ? `<p class="inline-note">发现 ${preview.errors.length} 行错误，这些行会跳过：</p><div class="panel pad tiny" style="max-height:160px;overflow:auto">${preview.errors.slice(0,20).map(esc).join('<br>')}</div>` : '<p class="tiny muted">未发现格式错误。</p>'}`, '确认导入', async () => { state = preview.next; if (!selectedTerm) selectedTerm = terms(state)[0] || ''; await persist(); notify('Excel 已导入'); });
+  showModal('确认 Excel 导入', `<div class="notice">新增学生 ${c.students} 人、成绩 ${c.grades} 条、资助 ${c.funding} 条、工作记录 ${c.records} 条；更新 ${c.updated} 条。</div>${preview.errors.length ? `<p class="inline-note">发现 ${preview.errors.length} 行错误，这些行会跳过：</p><div class="panel pad tiny" style="max-height:160px;overflow:auto">${preview.errors.slice(0,20).map(esc).join('<br>')}</div><button type="button" class="btn small ghost" id="download-import-errors" style="margin-top:10px">下载错误清单</button>` : '<p class="tiny muted">未发现格式错误。</p>'}`, '确认导入', async () => { state = preview.next; if (!selectedTerm) selectedTerm = terms(state)[0] || ''; await persist(); notify('Excel 已导入'); });
+  modalRoot.querySelector('#download-import-errors')?.addEventListener('click', () => download(new Blob([`\uFEFF问题\n${preview.errors.map(error => `"${error.replaceAll('"','""')}"`).join('\n')}`], { type: 'text/csv;charset=utf-8' }), `Excel导入错误_${stamp()}.csv`));
 }
 async function importPhotoZip(file) {
   if (file.size > 50 * 1024 * 1024) throw new Error('照片 ZIP 超过 50 MB，请分成多个压缩包导入');
@@ -260,6 +267,7 @@ async function importPhotoZip(file) {
 }
 async function exportEncrypted(password) {
   const blob = await makePackage(state, await allFiles(), password), name = packageName();
+  state.settings.lastExportedAt = now(); await persist();
   closeModal();
   modalRoot.innerHTML = `<div class="modal-shade"><div class="modal"><div class="modal-head"><h2>数据包已生成</h2><button class="close" data-close>×</button></div><p class="notice">${esc(name)}<br>文件名包含应用版本号和导出日期时间。请妥善保管密码。</p><div class="modal-actions"><button class="btn ghost" data-close>关闭</button><button class="btn" id="save-package">保存 / 分享 ZIP</button></div></div></div>`;
   modalRoot.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click',closeModal));
@@ -285,6 +293,10 @@ app.addEventListener('click', async event => {
       case 'back-students': selectedId = ''; render(); break;
       case 'back-work': workModule = ''; render(); break;
       case 'work-module': workModule = button.dataset.module; render(); window.scrollTo(0, 0); break;
+      case 'todo-filter': todoFilter = button.dataset.filter; render(); break;
+      case 'work-add-grade': pickStudent(() => gradeForm()); break;
+      case 'work-add-funding': pickStudent(() => fundingForm()); break;
+      case 'work-add-record': pickStudent(() => recordForm()); break;
       case 'add-student': studentForm(); break;
       case 'edit-student': studentForm(student()); break;
       case 'add-grade': gradeForm(); break;

@@ -1,6 +1,6 @@
 import { COLUMNS, STUDENT_EXPORT_COLUMNS, STUDENT_KNOWN_COLUMNS } from './xlsx.js';
 
-export const APP_VERSION = '1.0.6';
+export const APP_VERSION = '1.0.7';
 export const emptyState = () => ({ schema: 1, students: {}, grades: [], funding: [], records: [], settings: { threshold: 1 }, updatedAt: new Date().toISOString() });
 export const uid = () => crypto.randomUUID?.() || [...crypto.getRandomValues(new Uint8Array(16))].map(v => v.toString(16).padStart(2, '0')).join('');
 export const now = () => new Date().toISOString();
@@ -176,9 +176,9 @@ export function previewWorkbook(state, workbook) {
   const next = structuredClone(state);
   const errors = [];
   const counts = { students: 0, grades: 0, funding: 0, records: 0, updated: 0 };
-  for (const { data } of rowsToObjects(workbook.学生)) {
+  for (const { rowNumber, data } of rowsToObjects(workbook.学生)) {
     const id = data.学号, name = data.姓名;
-    if (!id) continue;
+    if (!id) { errors.push(`学生表第 ${rowNumber} 行缺少学号，已跳过`); continue; }
     const old = next.students[id];
     const custom = { ...(old?.custom || {}) };
     for (const [key, value] of Object.entries(data)) if (key && !STUDENT_KNOWN_COLUMNS.has(key) && value) custom[key] = value;
@@ -188,11 +188,12 @@ export function previewWorkbook(state, workbook) {
   const configs = [
     ['成绩', 'grades', data => ({ id: data.记录ID || uid(), studentId: data.学号, term: data.学期, courseCode: data.课程代码, courseName: data.课程名称, score: data.成绩, failed: data.是否挂科, retakeStatus: data.补考或重修状态, note: data.备注 }) , data => stable([data.学号, data.学期, data.课程代码 || data.课程名称])],
     ['资助', 'funding', data => ({ id: data.记录ID || uid(), studentId: data.学号, hardship: data.困难等级, family: data.家庭情况, program: data.资助项目, paidAt: excelDate(data.发放日期), amount: data.发放金额, note: data.备注 }), data => stable([data.学号, data.资助项目, data.发放日期, data.发放金额])],
-    ['工作记录', 'records', data => ({ id: data.记录ID || uid(), studentId: data.学号, type: data.类型 || '谈话', date: excelDate(data.日期), subject: data.对象, summary: data.摘要, todo: data.后续待办, dueDate: excelDate(data.到期日期), done: ['是', '已完成', 'true', '1'].includes(clean(data.完成状态).toLowerCase()), attachments: [] }), data => stable([data.学号, data.类型, data.日期, data.对象, data.摘要])]
+    ['工作记录', 'records', data => ({ id: data.记录ID || uid(), studentId: data.学号, type: data.类型 || '谈话', date: excelDate(data.日期), subject: data.对象, attention: data.关注等级, source: data.来源, summary: data.摘要, todo: data.后续待办, outcome: data.处理结论, dueDate: excelDate(data.到期日期), done: ['是', '已完成', 'true', '1'].includes(clean(data.完成状态).toLowerCase()), attachments: [] }), data => stable([data.学号, data.类型, data.日期, data.对象, data.摘要])]
   ];
   for (const [sheetName, key, make, naturalKey] of configs) {
     for (const { rowNumber, data } of rowsToObjects(workbook[sheetName])) {
-      if (!data.学号 || !next.students[data.学号]) continue;
+      if (!data.学号) { errors.push(`${sheetName}表第 ${rowNumber} 行缺少学号，已跳过`); continue; }
+      if (!next.students[data.学号]) { errors.push(`${sheetName}表第 ${rowNumber} 行的学号 ${data.学号} 未在学生表中找到，已跳过`); continue; }
       const candidate = make(data);
       const oldIndex = next[key].findIndex(item => item.id === data.记录ID || (!data.记录ID && naturalKey(reverseRow(sheetName, item)) === naturalKey(data)));
       if (oldIndex < 0) { next[key].push({ ...candidate, updatedAt: now() }); counts[key]++; }
@@ -215,6 +216,6 @@ export function exportSheets(state) {
     学生: [[...STUDENT_EXPORT_COLUMNS, ...customKeys], ...students.map((s, index) => [index + 1, s.major, s.className, s.id, s.name, s.gender, s.ethnicity, s.idNumber, s.dorm, s.phone, s.parentPhone, s.address, s.birthDate, ...customKeys.map(k => s.custom?.[k] || '')])],
     成绩: [COLUMNS.成绩, ...state.grades.map(g => [g.id, g.studentId, g.term, g.courseCode, g.courseName, g.score, g.failed, g.retakeStatus, g.note])],
     资助: [COLUMNS.资助, ...state.funding.map(f => [f.id, f.studentId, f.hardship, f.family, f.program, f.paidAt, f.amount, f.note])],
-    工作记录: [COLUMNS.工作记录, ...state.records.map(r => [r.id, r.studentId, r.type, r.date, r.subject, r.summary, r.todo, r.dueDate, r.done ? '已完成' : '未完成'])]
+    工作记录: [COLUMNS.工作记录, ...state.records.map(r => [r.id, r.studentId, r.type, r.date, r.subject, r.attention, r.source, r.summary, r.todo, r.outcome, r.dueDate, r.done ? '已完成' : '未完成'])]
   };
 }
