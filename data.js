@@ -1,6 +1,6 @@
-import { COLUMNS } from './xlsx.js';
+import { COLUMNS, STUDENT_EXPORT_COLUMNS, STUDENT_KNOWN_COLUMNS } from './xlsx.js';
 
-export const APP_VERSION = '1.0.1';
+export const APP_VERSION = '1.0.2';
 export const emptyState = () => ({ schema: 1, students: {}, grades: [], funding: [], records: [], settings: { threshold: 1 }, updatedAt: new Date().toISOString() });
 export const uid = () => crypto.randomUUID?.() || [...crypto.getRandomValues(new Uint8Array(16))].map(v => v.toString(16).padStart(2, '0')).join('');
 export const now = () => new Date().toISOString();
@@ -176,13 +176,13 @@ export function previewWorkbook(state, workbook) {
   const next = structuredClone(state);
   const errors = [];
   const counts = { students: 0, grades: 0, funding: 0, records: 0, updated: 0 };
-  for (const { rowNumber, data } of rowsToObjects(workbook.学生)) {
+  for (const { data } of rowsToObjects(workbook.学生)) {
     const id = data.学号, name = data.姓名;
-    if (!id || !name) { errors.push(`学生表第 ${rowNumber} 行缺少学号或姓名`); continue; }
+    if (!id) continue;
     const old = next.students[id];
     const custom = { ...(old?.custom || {}) };
-    for (const [key, value] of Object.entries(data)) if (key && !COLUMNS.学生.includes(key) && value) custom[key] = value;
-    next.students[id] = { ...old, id, name, className: data.班级 || old?.className || '', major: data.专业 || old?.major || '', dorm: data.宿舍 || old?.dorm || '', phone: data.本人电话 || old?.phone || '', parentPhone: data.家长电话 || old?.parentPhone || '', address: data.家庭住址 || old?.address || '', idNumber: data.身份证号 || old?.idNumber || '', gender: data.性别 || old?.gender || '', birthDate: excelDate(data.出生日期) || dateFromId(data.身份证号 || old?.idNumber) || old?.birthDate || '', custom, updatedAt: now() };
+    for (const [key, value] of Object.entries(data)) if (key && !STUDENT_KNOWN_COLUMNS.has(key) && value) custom[key] = value;
+    next.students[id] = { ...old, id, name: name || old?.name || '', className: data.班级 || old?.className || '', major: data.专业 || old?.major || '', dorm: data.宿舍 || old?.dorm || '', phone: data.本人电话 || old?.phone || '', parentPhone: data.家长电话 || old?.parentPhone || '', address: data.家庭住址 || old?.address || '', idNumber: data.身份证号 || old?.idNumber || '', gender: data.性别 || old?.gender || '', ethnicity: data.民族 || old?.ethnicity || '', birthDate: excelDate(data.出生日期) || dateFromId(data.身份证号 || old?.idNumber) || old?.birthDate || '', custom, updatedAt: now() };
     counts[old ? 'updated' : 'students']++;
   }
   const configs = [
@@ -192,8 +192,7 @@ export function previewWorkbook(state, workbook) {
   ];
   for (const [sheetName, key, make, naturalKey] of configs) {
     for (const { rowNumber, data } of rowsToObjects(workbook[sheetName])) {
-      if (!data.学号 || !next.students[data.学号]) { errors.push(`${sheetName}表第 ${rowNumber} 行的学号不存在`); continue; }
-      if (sheetName === '成绩' && (!data.学期 || !data.课程名称)) { errors.push(`成绩表第 ${rowNumber} 行缺少学期或课程名称`); continue; }
+      if (!data.学号 || !next.students[data.学号]) continue;
       const candidate = make(data);
       const oldIndex = next[key].findIndex(item => item.id === data.记录ID || (!data.记录ID && naturalKey(reverseRow(sheetName, item)) === naturalKey(data)));
       if (oldIndex < 0) { next[key].push({ ...candidate, updatedAt: now() }); counts[key]++; }
@@ -213,7 +212,7 @@ export function exportSheets(state) {
   const students = Object.values(state.students);
   const customKeys = [...new Set(students.flatMap(s => Object.keys(s.custom || {})))].sort();
   return {
-    学生: [[...COLUMNS.学生, ...customKeys], ...students.map(s => [s.id, s.name, s.className, s.major, s.dorm, s.phone, s.parentPhone, s.address, s.idNumber, s.gender, s.birthDate, ...customKeys.map(k => s.custom?.[k] || '')])],
+    学生: [[...STUDENT_EXPORT_COLUMNS, ...customKeys], ...students.map((s, index) => [index + 1, s.major, s.className, s.id, s.name, s.gender, s.ethnicity, s.idNumber, s.dorm, s.phone, s.parentPhone, s.address, s.birthDate, ...customKeys.map(k => s.custom?.[k] || '')])],
     成绩: [COLUMNS.成绩, ...state.grades.map(g => [g.id, g.studentId, g.term, g.courseCode, g.courseName, g.score, g.failed, g.retakeStatus, g.note])],
     资助: [COLUMNS.资助, ...state.funding.map(f => [f.id, f.studentId, f.hardship, f.family, f.program, f.paidAt, f.amount, f.note])],
     工作记录: [COLUMNS.工作记录, ...state.records.map(r => [r.id, r.studentId, r.type, r.date, r.subject, r.summary, r.todo, r.dueDate, r.done ? '已完成' : '未完成'])]

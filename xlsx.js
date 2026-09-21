@@ -1,7 +1,11 @@
 import { zipSync, unzipSync, strToU8, strFromU8 } from './vendor/fflate.js';
 
+export const STUDENT_TEMPLATE_COLUMNS = ['序号', '专业', '班级', '学号', '姓名', '性别', '民族', '身份证号', '宿舍', '本人电话', '家长电话', '家庭住址'];
+export const STUDENT_EXPORT_COLUMNS = [...STUDENT_TEMPLATE_COLUMNS, '出生日期'];
+export const STUDENT_KNOWN_COLUMNS = new Set(STUDENT_EXPORT_COLUMNS);
+
 export const COLUMNS = {
-  学生: ['学号', '姓名', '班级', '专业', '宿舍', '本人电话', '家长电话', '家庭住址', '身份证号', '性别', '出生日期'],
+  学生: STUDENT_TEMPLATE_COLUMNS,
   成绩: ['记录ID', '学号', '学期', '课程代码', '课程名称', '成绩', '是否挂科', '补考或重修状态', '备注'],
   资助: ['记录ID', '学号', '困难等级', '家庭情况', '资助项目', '发放日期', '发放金额', '备注'],
   工作记录: ['记录ID', '学号', '类型', '日期', '对象', '摘要', '后续待办', '到期日期', '完成状态']
@@ -31,7 +35,7 @@ export function createWorkbook(sheets) {
   };
   entries.forEach(([name, rows], i) => {
     const body = rows.map((row, ri) => `<row r="${ri + 1}">${row.map((value, ci) => `<c r="${colRef(ci)}${ri + 1}" t="inlineStr"><is><t xml:space="preserve">${xml(value)}</t></is></c>`).join('')}</row>`).join('');
-    const textCols = name === '学生' ? [1, 9] : [1, 2];
+    const textCols = name === '学生' ? [4, 8] : [1, 2];
     const cols = `<cols>${textCols.map(n => `<col min="${n}" max="${n}" width="18" customWidth="1" style="1"/>`).join('')}</cols>`;
     files[`xl/worksheets/sheet${i + 1}.xml`] = strToU8(`<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${cols}<sheetData>${body}</sheetData></worksheet>`);
   });

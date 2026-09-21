@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { unzipSync, strFromU8 } from './vendor/fflate.js';
 import { APP_VERSION, emptyState, dateFromId, gradeStats, previewWorkbook, exportSheets, isPasscode } from './data.js';
-import { COLUMNS, blankTemplate, createWorkbook } from './xlsx.js';
+import { COLUMNS, STUDENT_EXPORT_COLUMNS, blankTemplate, createWorkbook } from './xlsx.js';
 import { makePackage, readPackage, mergePackage, packageName } from './transfer.js';
 
 test('fixed workbook has four worksheets and text identifiers', async () => {
@@ -15,22 +15,27 @@ test('fixed workbook has four worksheets and text identifiers', async () => {
   assert.match(workbook, /name="工作记录"/);
   assert.match(strFromU8(zip['xl/worksheets/sheet1.xml']), /t="inlineStr"/);
   assert.equal(Object.keys(COLUMNS).length, 4);
+  assert.deepEqual(COLUMNS.学生, ['序号', '专业', '班级', '学号', '姓名', '性别', '民族', '身份证号', '宿舍', '本人电话', '家长电话', '家庭住址']);
 });
 
 test('Excel preview matches by student ID, adds custom fields and avoids duplicates', () => {
   const workbook = {
-    学生: [['学号','姓名','班级','自定义_宿舍楼'], ['00123','张三','一班','6栋']],
+    学生: [[...COLUMNS.学生, '自定义_宿舍楼'], ['1','', '一班','00123','','','','','','','','','6栋'], ['', '', '', '', '', '', '', '', '', '', '', '', '']],
     成绩: [COLUMNS.成绩, ['', '00123','2025-2026-2','MATH01','高数','55','是','补考通过','']],
     资助: [COLUMNS.资助], 工作记录: [COLUMNS.工作记录]
   };
   const first = previewWorkbook(emptyState(),workbook);
   assert.equal(first.errors.length,0);
+  assert.equal(first.next.students['00123'].name,'');
+  assert.equal(first.next.students['00123'].ethnicity,'');
   assert.equal(first.next.students['00123'].custom['自定义_宿舍楼'],'6栋');
   assert.equal(gradeStats(first.next,'00123','2025-2026-2').cumulative,1);
   assert.equal(gradeStats(first.next,'00123','2025-2026-2').resolved,1);
   const second = previewWorkbook(first.next,workbook);
   assert.equal(second.next.grades.length,1);
-  assert.equal(exportSheets(second.next).学生[1][0],'00123');
+  assert.deepEqual(exportSheets(second.next).学生[0].slice(0, STUDENT_EXPORT_COLUMNS.length), STUDENT_EXPORT_COLUMNS);
+  assert.equal(exportSheets(second.next).学生[1][3],'00123');
+  assert.equal(exportSheets(second.next).学生[1][4],'');
 });
 
 test('birth date only comes from a valid mainland ID checksum', () => {
