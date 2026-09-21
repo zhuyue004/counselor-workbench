@@ -18,6 +18,7 @@ const studentName = id => state.students[id] ? displayName(state.students[id].na
 const studentInitial = s => displayName(s?.name).slice(0, 1);
 const courseLabel = grade => grade.courseName || grade.courseCode || '未命名课程';
 const releases = [
+  { version: '1.0.9', updatedAt: '2026-09-21 17:05', notes: ['修复 iPhone 学生搜索框输入文字时被页面重绘中断的问题。'] },
   { version: '1.0.8', updatedAt: '2026-09-21 17:00', notes: ['界面调整为更接近 iPhone 原生的分组列表和联系人详情样式。', '首页、学生、工作、待办和设置统一视觉层级。'] },
   { version: '1.0.7', updatedAt: '2026-09-21 16:45', notes: ['工作模块支持选择学生后直接新增成绩、资助及各类工作记录。', '完善待办筛选、资料完整度、导入反馈、备份状态和心理工作字段。'] },
   { version: '1.0.6', updatedAt: '2026-09-21 16:31', notes: ['底部导航调整为首页、学生、工作、待办和设置。', '新增工作中心，集中查看组织发展、学业成绩、资助、心理和家校联系。'] },
@@ -95,7 +96,7 @@ function studentsView() {
   if (selectedId && student()) return detailView();
   const query = search.toLowerCase(), filtered = Object.values(state.students).filter(s => [s.id,s.name,s.className,s.major,s.dorm].some(v => clean(v).toLowerCase().includes(query))).sort((a,b) => clean(a.className).localeCompare(clean(b.className),'zh-CN') || clean(a.name).localeCompare(clean(b.name),'zh-CN'));
   const groups = filtered.reduce((result, s) => { const key = s.className || '未分班'; (result[key] ||= []).push(s); return result; }, {});
-  return `<div class="toolbar"><h2>学生 <span class="muted tiny">${filtered.length}</span></h2><button class="btn small" data-action="add-student">＋ 新增</button></div><div class="search-wrap"><input class="search" id="student-search" type="search" placeholder="搜索姓名、学号、班级、专业" value="${esc(search)}"></div>${filtered.length ? Object.entries(groups).map(([group, rows]) => `<section class="student-group"><h3>${esc(group)} <small>${rows.length}</small></h3><div class="panel list">${rows.map(s => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.id)} · ${esc(s.major || '未填专业')}</small></div><span class="chevron">›</span></button>`).join('')}</div></section>`).join('') : `<div class="panel">${empty(search ? '没有匹配的学生' : '还没有学生档案')}</div>`}`;
+  return `<div class="toolbar"><h2>学生 <span class="muted tiny">${filtered.length}</span></h2><button class="btn small" data-action="add-student">＋ 新增</button></div><div class="search-wrap"><input class="search" id="student-search" type="search" placeholder="搜索姓名、学号、班级、专业" value="${esc(search)}"></div>${filtered.length ? Object.entries(groups).map(([group, rows]) => `<section class="student-group"><h3>${esc(group)} <small>${rows.length}</small></h3><div class="panel list">${rows.map(s => `<button class="list-row student-row" data-student="${esc(s.id)}" data-search="${esc([s.id,s.name,s.className,s.major,s.dorm].map(clean).join(' ').toLowerCase())}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.id)} · ${esc(s.major || '未填专业')}</small></div><span class="chevron">›</span></button>`).join('')}</div></section>`).join('') : `<div class="panel">${empty(search ? '没有匹配的学生' : '还没有学生档案')}</div>`}`;
 }
 const dialNumber = value => clean(value).replace(/[^\d+]/g, '');
 const profileMissing = student => ['姓名','班级','专业','宿舍','本人电话','家长电话','家庭住址','身份证号','证件照'].filter(label => ({ 姓名: student.name, 班级: student.className, 专业: student.major, 宿舍: student.dorm, 本人电话: student.phone, 家长电话: student.parentPhone, 家庭住址: student.address, 身份证号: student.idNumber, 证件照: student.photoId })[label] ? false : true);
@@ -178,7 +179,7 @@ function render() {
   const body = view === 'home' ? homeView() : view === 'students' ? studentsView() : view === 'work' ? workView() : view === 'alerts' ? alertsView() : dataView();
   shell(body);
   const searchInput = document.querySelector('#student-search');
-  if (searchInput) searchInput.addEventListener('input', event => { const pos = event.target.selectionStart; search = event.target.value; render(); const input = document.querySelector('#student-search'); input.focus(); input.setSelectionRange(pos,pos); });
+  if (searchInput) searchInput.addEventListener('input', event => { search = event.target.value; const query = search.toLowerCase(); document.querySelectorAll('.student-row').forEach(row => row.hidden = !row.dataset.search.includes(query)); document.querySelectorAll('.student-group').forEach(group => group.hidden = ![...group.querySelectorAll('.student-row')].some(row => !row.hidden)); });
   const workInput = document.querySelector('#work-search');
   if (workInput) workInput.addEventListener('input', event => { workSearch = event.target.value; render(); document.querySelector('#work-search')?.focus(); });
   document.querySelector('#term-select')?.addEventListener('change', event => { selectedTerm = event.target.value; render(); });
