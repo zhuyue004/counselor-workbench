@@ -18,6 +18,7 @@ const studentName = id => state.students[id] ? displayName(state.students[id].na
 const studentInitial = s => displayName(s?.name).slice(0, 1);
 const courseLabel = grade => grade.courseName || grade.courseCode || '未命名课程';
 const releases = [
+  { version: '1.0.5', updatedAt: '2026-09-21 16:24', notes: ['学生详情中的本人电话和家长电话支持点击拨号。'] },
   { version: '1.0.4', updatedAt: '2026-09-21 16:19', notes: ['“数据”模块改为“设置”。', '新增当前版本、更新时间和历史更新记录。'] },
   { version: '1.0.3', updatedAt: '2026-09-21 16:12', notes: ['顶部改为紧凑栏，移除英文标题和冗余提示。'] },
   { version: '1.0.2', updatedAt: '2026-09-21 16:04', notes: ['学生模板调整为序号、专业、班级、学号、姓名、性别、民族等列。', '除学号外的学生字段可留空。'] },
@@ -92,7 +93,12 @@ function studentsView() {
   const query = search.toLowerCase(), filtered = Object.values(state.students).filter(s => [s.id,s.name,s.className,s.major,s.dorm].some(v => clean(v).toLowerCase().includes(query))).sort((a,b) => clean(a.className).localeCompare(clean(b.className),'zh-CN') || clean(a.name).localeCompare(clean(b.name),'zh-CN'));
   return `<div class="toolbar"><h2>学生档案 <span class="muted tiny">${filtered.length}</span></h2><button class="btn small" data-action="add-student">＋ 新增</button></div><div class="search-wrap"><input class="search" id="student-search" type="search" placeholder="搜索姓名、学号、班级、专业" value="${esc(search)}"></div><div class="panel list">${filtered.length ? filtered.map(s => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.className || '未分班')} · ${esc(s.id)} · ${esc(s.major)}</small></div><span class="chevron">›</span></button>`).join('') : empty(search ? '没有匹配的学生' : '还没有学生档案', search ? '试试学号或班级关键词。' : '可手工新增，或从固定 Excel 模板批量导入。')}</div>`;
 }
-function infoItem(label, value) { return `<div class="info-item"><small>${esc(label)}</small><strong>${esc(value || '—')}</strong></div>`; }
+const dialNumber = value => clean(value).replace(/[^\d+]/g, '');
+function infoItem(label, value) {
+  const phone = ['本人电话', '家长电话'].includes(label) && dialNumber(value);
+  const content = phone ? `<a class="phone-link" href="tel:${esc(phone)}">${esc(value)}</a>` : esc(value || '—');
+  return `<div class="info-item"><small>${esc(label)}</small><strong>${content}</strong></div>`;
+}
 function detailView() {
   const s = student(); const grades = state.grades.filter(g => g.studentId === s.id), funding = state.funding.filter(f => f.studentId === s.id), records = state.records.filter(r => r.studentId === s.id).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
   const tabs = [['info','信息'],['grades','成绩'],['funding','资助'],['records','记录']];
