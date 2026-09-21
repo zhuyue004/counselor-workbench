@@ -15,12 +15,12 @@ test('fixed workbook has four worksheets and text identifiers', async () => {
   assert.match(workbook, /name="工作记录"/);
   assert.match(strFromU8(zip['xl/worksheets/sheet1.xml']), /t="inlineStr"/);
   assert.equal(Object.keys(COLUMNS).length, 4);
-  assert.deepEqual(COLUMNS.学生, ['序号', '专业', '班级', '学号', '姓名', '性别', '民族', '身份证号', '宿舍', '本人电话', '家长电话', '家庭住址']);
+  assert.deepEqual(COLUMNS.学生, ['序号', '专业', '班级', '学号', '姓名', '班级职务', '性别', '民族', '身份证号', '宿舍', '本人电话', '家长电话', '家庭住址']);
 });
 
 test('Excel preview matches by student ID, adds custom fields and avoids duplicates', () => {
   const workbook = {
-    学生: [[...COLUMNS.学生, '自定义_宿舍楼'], ['1','', '一班','00123','','','','','','','','','6栋'], ['', '', '', '', '', '', '', '', '', '', '', '', '']],
+    学生: [[...COLUMNS.学生, '自定义_宿舍楼'], ['1','', '一班','00123','','','','','','','','','','6栋'], ['', '', '', '', '', '', '', '', '', '', '', '', '', '']],
     成绩: [COLUMNS.成绩, ['', '00123','2025-2026-2','MATH01','高数','55','是','补考通过','']],
     资助: [COLUMNS.资助], 工作记录: [COLUMNS.工作记录]
   };

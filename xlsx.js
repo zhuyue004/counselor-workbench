@@ -1,6 +1,6 @@
 import { zipSync, unzipSync, strToU8, strFromU8 } from './vendor/fflate.js';
 
-export const STUDENT_TEMPLATE_COLUMNS = ['序号', '专业', '班级', '学号', '姓名', '性别', '民族', '身份证号', '宿舍', '本人电话', '家长电话', '家庭住址'];
+export const STUDENT_TEMPLATE_COLUMNS = ['序号', '专业', '班级', '学号', '姓名', '班级职务', '性别', '民族', '身份证号', '宿舍', '本人电话', '家长电话', '家庭住址'];
 export const STUDENT_EXPORT_COLUMNS = [...STUDENT_TEMPLATE_COLUMNS, '出生日期'];
 export const STUDENT_KNOWN_COLUMNS = new Set(STUDENT_EXPORT_COLUMNS);
 
@@ -35,7 +35,7 @@ export function createWorkbook(sheets) {
   };
   entries.forEach(([name, rows], i) => {
     const body = rows.map((row, ri) => `<row r="${ri + 1}">${row.map((value, ci) => `<c r="${colRef(ci)}${ri + 1}" t="inlineStr"><is><t xml:space="preserve">${xml(value)}</t></is></c>`).join('')}</row>`).join('');
-    const textCols = name === '学生' ? [4, 8] : [1, 2];
+    const textCols = name === '学生' ? [4, 9] : [1, 2];
     const cols = `<cols>${textCols.map(n => `<col min="${n}" max="${n}" width="18" customWidth="1" style="1"/>`).join('')}</cols>`;
     files[`xl/worksheets/sheet${i + 1}.xml`] = strToU8(`<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${cols}<sheetData>${body}</sheetData></worksheet>`);
   });

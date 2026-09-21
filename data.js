@@ -1,6 +1,6 @@
 import { COLUMNS, STUDENT_EXPORT_COLUMNS, STUDENT_KNOWN_COLUMNS } from './xlsx.js';
 
-export const APP_VERSION = '1.0.10';
+export const APP_VERSION = '1.0.11';
 export const emptyState = () => ({ schema: 1, students: {}, grades: [], funding: [], records: [], settings: { threshold: 1 }, updatedAt: new Date().toISOString() });
 export const uid = () => crypto.randomUUID?.() || [...crypto.getRandomValues(new Uint8Array(16))].map(v => v.toString(16).padStart(2, '0')).join('');
 export const now = () => new Date().toISOString();
@@ -182,7 +182,7 @@ export function previewWorkbook(state, workbook) {
     const old = next.students[id];
     const custom = { ...(old?.custom || {}) };
     for (const [key, value] of Object.entries(data)) if (key && !STUDENT_KNOWN_COLUMNS.has(key) && value) custom[key] = value;
-    next.students[id] = { ...old, id, name: name || old?.name || '', className: data.班级 || old?.className || '', major: data.专业 || old?.major || '', dorm: data.宿舍 || old?.dorm || '', phone: data.本人电话 || old?.phone || '', parentPhone: data.家长电话 || old?.parentPhone || '', address: data.家庭住址 || old?.address || '', idNumber: data.身份证号 || old?.idNumber || '', gender: data.性别 || old?.gender || '', ethnicity: data.民族 || old?.ethnicity || '', birthDate: excelDate(data.出生日期) || dateFromId(data.身份证号 || old?.idNumber) || old?.birthDate || '', custom, updatedAt: now() };
+    next.students[id] = { ...old, id, name: name || old?.name || '', className: data.班级 || old?.className || '', classRole: data.班级职务 || old?.classRole || '', major: data.专业 || old?.major || '', dorm: data.宿舍 || old?.dorm || '', phone: data.本人电话 || old?.phone || '', parentPhone: data.家长电话 || old?.parentPhone || '', address: data.家庭住址 || old?.address || '', idNumber: data.身份证号 || old?.idNumber || '', gender: data.性别 || old?.gender || '', ethnicity: data.民族 || old?.ethnicity || '', birthDate: excelDate(data.出生日期) || dateFromId(data.身份证号 || old?.idNumber) || old?.birthDate || '', custom, updatedAt: now() };
     counts[old ? 'updated' : 'students']++;
   }
   const configs = [
@@ -213,7 +213,7 @@ export function exportSheets(state) {
   const students = Object.values(state.students);
   const customKeys = [...new Set(students.flatMap(s => Object.keys(s.custom || {})))].sort();
   return {
-    学生: [[...STUDENT_EXPORT_COLUMNS, ...customKeys], ...students.map((s, index) => [index + 1, s.major, s.className, s.id, s.name, s.gender, s.ethnicity, s.idNumber, s.dorm, s.phone, s.parentPhone, s.address, s.birthDate, ...customKeys.map(k => s.custom?.[k] || '')])],
+    学生: [[...STUDENT_EXPORT_COLUMNS, ...customKeys], ...students.map((s, index) => [index + 1, s.major, s.className, s.id, s.name, s.classRole, s.gender, s.ethnicity, s.idNumber, s.dorm, s.phone, s.parentPhone, s.address, s.birthDate, ...customKeys.map(k => s.custom?.[k] || '')])],
     成绩: [COLUMNS.成绩, ...state.grades.map(g => [g.id, g.studentId, g.term, g.courseCode, g.courseName, g.score, g.failed, g.retakeStatus, g.note])],
     资助: [COLUMNS.资助, ...state.funding.map(f => [f.id, f.studentId, f.hardship, f.family, f.program, f.paidAt, f.amount, f.note])],
     工作记录: [COLUMNS.工作记录, ...state.records.map(r => [r.id, r.studentId, r.type, r.date, r.subject, r.attention, r.source, r.summary, r.todo, r.outcome, r.dueDate, r.done ? '已完成' : '未完成'])]
