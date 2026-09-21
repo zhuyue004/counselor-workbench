@@ -7,7 +7,7 @@ const app = document.querySelector('#app');
 const modalRoot = document.querySelector('#modal-root');
 const toastEl = document.querySelector('#toast');
 const inputs = { xlsx: document.querySelector('#xlsx-input'), photozip: document.querySelector('#photozip-input'), package: document.querySelector('#package-input') };
-let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', photoUrl = '', toastTimer;
+let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', photoUrl = '', toastTimer;
 const today = () => new Date().toISOString().slice(0, 10);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 const fmtDate = value => clean(value) ? esc(clean(value).slice(0, 10)) : '—';
@@ -18,6 +18,7 @@ const studentName = id => state.students[id] ? displayName(state.students[id].na
 const studentInitial = s => displayName(s?.name).slice(0, 1);
 const courseLabel = grade => grade.courseName || grade.courseCode || '未命名课程';
 const releases = [
+  { version: '1.0.6', updatedAt: '2026-09-21 16:31', notes: ['底部导航调整为首页、学生、工作、待办和设置。', '新增工作中心，集中查看组织发展、学业成绩、资助、心理和家校联系。'] },
   { version: '1.0.5', updatedAt: '2026-09-21 16:24', notes: ['学生详情中的本人电话和家长电话支持点击拨号。'] },
   { version: '1.0.4', updatedAt: '2026-09-21 16:19', notes: ['“数据”模块改为“设置”。', '新增当前版本、更新时间和历史更新记录。'] },
   { version: '1.0.3', updatedAt: '2026-09-21 16:12', notes: ['顶部改为紧凑栏，移除英文标题和冗余提示。'] },
@@ -57,7 +58,7 @@ const field = (label, name, value = '', type = 'text', extra = '') => `<div clas
 const area = (label, name, value = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><textarea id="f-${esc(name)}" name="${esc(name)}">${esc(value)}</textarea></div>`;
 const choose = (label, name, options, current = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><select id="f-${esc(name)}" name="${esc(name)}">${options.map(option => `<option value="${esc(option)}" ${option === current ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div>`;
 async function persist() { await saveState(state); render(); }
-function setView(next) { view = next; render(); window.scrollTo(0, 0); }
+function setView(next) { view = next; if (next !== 'work') workModule = ''; render(); window.scrollTo(0, 0); }
 
 async function gate() {
   const exists = await hasSecurity();
@@ -75,7 +76,7 @@ async function gate() {
 }
 
 function shell(body) {
-  app.innerHTML = `<div class="shell"><header class="topbar"><div class="toprow"><div class="brand">辅导员工作台</div><button class="icon-btn" data-action="lock" aria-label="锁定">⌁</button></div></header><main class="content">${body}</main><nav class="tabbar" aria-label="主导航">${[['home','⌂','首页'],['students','▤','学生'],['alerts','◷','提醒'],['data','⇅','设置']].map(([key, icon, label]) => `<button data-view="${key}" class="${view === key ? 'active' : ''}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join('')}</nav></div>`;
+  app.innerHTML = `<div class="shell"><header class="topbar"><div class="toprow"><div class="brand">辅导员工作台</div><button class="icon-btn" data-action="lock" aria-label="锁定">⌁</button></div></header><main class="content">${body}</main><nav class="tabbar five-tabs" aria-label="主导航">${[['home','⌂','首页'],['students','◫','学生'],['work','▦','工作'],['alerts','✓','待办'],['data','⚙','设置']].map(([key, icon, label]) => `<button data-view="${key}" class="${view === key ? 'active' : ''}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join('')}</nav></div>`;
   if (photoUrl) { URL.revokeObjectURL(photoUrl); photoUrl = ''; }
   if (view === 'students' && selectedId) loadPhoto(selectedId);
 }
@@ -123,9 +124,40 @@ async function loadPhoto(id) {
   catch (error) { notify(error.message,true); }
 }
 function alertsView() {
-  const threshold = Number(state.settings.threshold || 1), warn = selectedTerm ? Object.values(state.students).map(s => ({ s, n: gradeStats(state,s.id,selectedTerm).semester })).filter(x => x.n >= threshold).sort((a,b) => b.n-a.n) : [];
   const due = state.records.filter(r => r.todo && !r.done).sort((a,b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
-  return `<div class="toolbar"><h2>预警与待办</h2><button class="btn small secondary" data-action="threshold">设置规则</button></div><div class="notice">本学期挂科达到 <strong>${threshold} 门</strong>时提示；累计挂科按曾经挂科的不同课程统计，补考或重修通过后仍保留历史。</div><div class="section-title"><h2>学业预警</h2><select id="term-select" class="mini-select"><option value="">选择学期</option>${terms(state).map(term => `<option value="${esc(term)}" ${term === selectedTerm ? 'selected' : ''}>${esc(term)}</option>`).join('')}</select></div><div class="panel list">${warn.length ? warn.map(({s,n}) => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.className)} · 历史累计 ${gradeStats(state,s.id,selectedTerm).cumulative} 门</small></div><span class="badge red">${n} 门</span></button>`).join('') : empty('暂无符合规则的学生', selectedTerm ? '可调整挂科门数阈值。' : '先导入或录入成绩，并选择学期。')}</div><div class="section-title"><h2>后续待办</h2><small>${due.length} 项</small></div><div class="panel list">${due.length ? due.map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">◷</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.todo)}</strong><small>${r.dueDate ? `到期 ${fmtDate(r.dueDate)}` : '未设到期日'} · ${esc(r.type)}</small></div><span class="badge ${r.dueDate && r.dueDate <= today() ? 'red' : ''}">${r.dueDate && r.dueDate <= today() ? '已到期' : '待办'}</span></button>`).join('') : empty('暂无待办', '工作记录中添加后续待办和到期日期。')}</div>`;
+  return `<div class="toolbar"><h2>待办</h2><small class="muted">${due.length} 项</small></div><div class="panel list">${due.length ? due.map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">✓</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.todo)}</strong><small>${r.dueDate ? `到期 ${fmtDate(r.dueDate)}` : '未设到期日'} · ${esc(r.type)}</small></div><span class="badge ${r.dueDate && r.dueDate <= today() ? 'red' : ''}">${r.dueDate && r.dueDate <= today() ? '已到期' : '待办'}</span></button>`).join('') : empty('暂无待办')}</div>`;
+}
+
+const workModules = [
+  ['organization', '◇', '组织发展'],
+  ['grades', '≋', '学业成绩'],
+  ['funding', '¥', '资助工作'],
+  ['mental', '♡', '心理工作'],
+  ['contact', '⌁', '家校联系']
+];
+function workView() {
+  if (workModule) return workDetailView();
+  return `<div class="toolbar"><h2>工作</h2></div><div class="work-grid">${workModules.map(([key, icon, label]) => `<button class="work-card" data-action="work-module" data-module="${key}"><span>${icon}</span><strong>${label}</strong><i>›</i></button>`).join('')}</div>`;
+}
+function workRecordList(type, emptyTitle) {
+  const records = state.records.filter(record => record.type === type).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  return `<div class="panel">${records.length ? records.map(record => `<button class="list-row" data-student="${esc(record.studentId)}"><div class="avatar">${type === '心理工作' ? '♡' : type === '组织发展' ? '◇' : '⌁'}</div><div class="row-main"><strong>${esc(studentName(record.studentId))}</strong><small>${fmtDate(record.date)} · ${esc(record.summary || '无摘要')}</small></div><span class="chevron">›</span></button>`).join('') : empty(emptyTitle)}</div>`;
+}
+function workDetailView() {
+  const module = workModules.find(([key]) => key === workModule);
+  if (!module) { workModule = ''; return workView(); }
+  const [, , title] = module;
+  let body = '';
+  if (workModule === 'grades') {
+    const threshold = Number(state.settings.threshold || 1), warnings = selectedTerm ? Object.values(state.students).map(s => ({ s, count: gradeStats(state,s.id,selectedTerm).semester })).filter(item => item.count >= threshold).sort((a,b) => b.count - a.count) : [];
+    body = `<div class="notice">本学期挂科达到 <strong>${threshold} 门</strong>时提醒。</div><div class="section-title"><h2>学业预警</h2><select id="term-select" class="mini-select"><option value="">选择学期</option>${terms(state).map(term => `<option value="${esc(term)}" ${term === selectedTerm ? 'selected' : ''}>${esc(term)}</option>`).join('')}</select></div><div class="panel list">${warnings.length ? warnings.map(({s,count}) => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(studentName(s.id))}</strong><small>${esc(s.className)} · 历史累计 ${gradeStats(state,s.id,selectedTerm).cumulative} 门</small></div><span class="badge red">${count} 门</span></button>`).join('') : empty('暂无学业预警')}</div>`;
+  } else if (workModule === 'funding') {
+    const rows = [...state.funding].sort((a,b) => (b.paidAt || '').localeCompare(a.paidAt || ''));
+    body = `<div class="panel list">${rows.length ? rows.map(item => `<button class="list-row" data-student="${esc(item.studentId)}"><div class="avatar">¥</div><div class="row-main"><strong>${esc(studentName(item.studentId))} · ${esc(item.program || '资助项目')}</strong><small>${fmtDate(item.paidAt)} · ¥ ${esc(item.amount || '0')}</small></div><span class="chevron">›</span></button>`).join('') : empty('暂无资助记录')}</div>`;
+  } else if (workModule === 'organization') body = workRecordList('组织发展', '暂无组织发展记录');
+  else if (workModule === 'mental') body = workRecordList('心理工作', '暂无心理工作记录');
+  else body = workRecordList('家校联系', '暂无家校联系记录');
+  return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2></div>${body}`;
 }
 function dataView() {
   const current = releases[0];
@@ -137,7 +169,7 @@ function versionHistory() {
 }
 function render() {
   if (!state) return gate();
-  const body = view === 'home' ? homeView() : view === 'students' ? studentsView() : view === 'alerts' ? alertsView() : dataView();
+  const body = view === 'home' ? homeView() : view === 'students' ? studentsView() : view === 'work' ? workView() : view === 'alerts' ? alertsView() : dataView();
   shell(body);
   const searchInput = document.querySelector('#student-search');
   if (searchInput) searchInput.addEventListener('input', event => { const pos = event.target.selectionStart; search = event.target.value; render(); const input = document.querySelector('#student-search'); input.focus(); input.setSelectionRange(pos,pos); });
@@ -172,7 +204,7 @@ function fundingForm(existing) {
 }
 function recordForm(existing) {
   const r = existing || {};
-  showModal(existing ? '编辑工作记录' : '添加工作记录', `${choose('类型','type',['谈话','家校联系'],r.type)}${field('日期','date',r.date || today(),'date','required')}${field('对象','subject',r.subject,'text','placeholder="例如 学生本人 / 母亲"')}${area('摘要 *','summary',r.summary)}${area('后续待办','todo',r.todo)}${field('到期日期','dueDate',r.dueDate,'date')}${field('追加截图（可多选）','images','','file','accept="image/*" multiple')}`, '保存记录', async (form,data) => {
+  showModal(existing ? '编辑工作记录' : '添加工作记录', `${choose('类型','type',['谈话','家校联系','组织发展','心理工作'],r.type)}${field('日期','date',r.date || today(),'date','required')}${field('对象','subject',r.subject,'text','placeholder="例如 学生本人 / 母亲"')}${area('摘要 *','summary',r.summary)}${area('后续待办','todo',r.todo)}${field('到期日期','dueDate',r.dueDate,'date')}${field('追加截图（可多选）','images','','file','accept="image/*" multiple')}`, '保存记录', async (form,data) => {
     const summary = clean(form.get('summary')); if (!summary) throw new Error('请填写摘要');
     const id = uid(), date = clean(form.get('date')), type = clean(form.get('type')), s = student();
     const images = [...data.querySelector('[name=images]').files]; const attachments = [...(r.attachments || [])];
@@ -251,6 +283,8 @@ app.addEventListener('click', async event => {
     switch(button.dataset.action) {
       case 'lock': lockSecurity(); state = undefined; selectedId = ''; gate(); break;
       case 'back-students': selectedId = ''; render(); break;
+      case 'back-work': workModule = ''; render(); break;
+      case 'work-module': workModule = button.dataset.module; render(); window.scrollTo(0, 0); break;
       case 'add-student': studentForm(); break;
       case 'edit-student': studentForm(student()); break;
       case 'add-grade': gradeForm(); break;
