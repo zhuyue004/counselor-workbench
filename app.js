@@ -17,6 +17,13 @@ const displayName = value => clean(value) || '—';
 const studentName = id => state.students[id] ? displayName(state.students[id].name) : id;
 const studentInitial = s => displayName(s?.name).slice(0, 1);
 const courseLabel = grade => grade.courseName || grade.courseCode || '未命名课程';
+const releases = [
+  { version: '1.0.4', updatedAt: '2026-09-21 16:19', notes: ['“数据”模块改为“设置”。', '新增当前版本、更新时间和历史更新记录。'] },
+  { version: '1.0.3', updatedAt: '2026-09-21 16:12', notes: ['顶部改为紧凑栏，移除英文标题和冗余提示。'] },
+  { version: '1.0.2', updatedAt: '2026-09-21 16:04', notes: ['学生模板调整为序号、专业、班级、学号、姓名、性别、民族等列。', '除学号外的学生字段可留空。'] },
+  { version: '1.0.1', updatedAt: '2026-09-21 15:50', notes: ['修复手工保存学生档案时 IndexedDB 写入失败的问题。', '解锁密码改为 6 位数字。'] },
+  { version: '1.0.0', updatedAt: '2026-09-21 14:53', notes: ['完成 iPhone 版学生档案、成绩预警、资助和工作记录。'] }
+];
 async function normalizedPhoto(blob) {
   const url = URL.createObjectURL(blob);
   try {
@@ -67,7 +74,7 @@ async function gate() {
 }
 
 function shell(body) {
-  app.innerHTML = `<div class="shell"><header class="topbar"><div class="toprow"><div class="brand">辅导员工作台</div><button class="icon-btn" data-action="lock" aria-label="锁定">⌁</button></div></header><main class="content">${body}</main><nav class="tabbar" aria-label="主导航">${[['home','⌂','首页'],['students','▤','学生'],['alerts','◷','提醒'],['data','⇅','数据']].map(([key, icon, label]) => `<button data-view="${key}" class="${view === key ? 'active' : ''}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join('')}</nav></div>`;
+  app.innerHTML = `<div class="shell"><header class="topbar"><div class="toprow"><div class="brand">辅导员工作台</div><button class="icon-btn" data-action="lock" aria-label="锁定">⌁</button></div></header><main class="content">${body}</main><nav class="tabbar" aria-label="主导航">${[['home','⌂','首页'],['students','▤','学生'],['alerts','◷','提醒'],['data','⇅','设置']].map(([key, icon, label]) => `<button data-view="${key}" class="${view === key ? 'active' : ''}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join('')}</nav></div>`;
   if (photoUrl) { URL.revokeObjectURL(photoUrl); photoUrl = ''; }
   if (view === 'students' && selectedId) loadPhoto(selectedId);
 }
@@ -115,7 +122,12 @@ function alertsView() {
   return `<div class="toolbar"><h2>预警与待办</h2><button class="btn small secondary" data-action="threshold">设置规则</button></div><div class="notice">本学期挂科达到 <strong>${threshold} 门</strong>时提示；累计挂科按曾经挂科的不同课程统计，补考或重修通过后仍保留历史。</div><div class="section-title"><h2>学业预警</h2><select id="term-select" class="mini-select"><option value="">选择学期</option>${terms(state).map(term => `<option value="${esc(term)}" ${term === selectedTerm ? 'selected' : ''}>${esc(term)}</option>`).join('')}</select></div><div class="panel list">${warn.length ? warn.map(({s,n}) => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.className)} · 历史累计 ${gradeStats(state,s.id,selectedTerm).cumulative} 门</small></div><span class="badge red">${n} 门</span></button>`).join('') : empty('暂无符合规则的学生', selectedTerm ? '可调整挂科门数阈值。' : '先导入或录入成绩，并选择学期。')}</div><div class="section-title"><h2>后续待办</h2><small>${due.length} 项</small></div><div class="panel list">${due.length ? due.map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">◷</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.todo)}</strong><small>${r.dueDate ? `到期 ${fmtDate(r.dueDate)}` : '未设到期日'} · ${esc(r.type)}</small></div><span class="badge ${r.dueDate && r.dueDate <= today() ? 'red' : ''}">${r.dueDate && r.dueDate <= today() ? '已到期' : '待办'}</span></button>`).join('') : empty('暂无待办', '工作记录中添加后续待办和到期日期。')}</div>`;
 }
 function dataView() {
-  return `<div class="toolbar"><h2>数据管理</h2></div><div class="section-title"><h2>本机解锁</h2></div><div class="panel"><div class="file-card"><h3>6 位数字密码</h3><button class="btn ghost" data-action="change-passcode">修改解锁密码</button></div></div><div class="section-title"><h2>Excel 模板</h2></div><div class="panel"><div class="file-card"><h3>空白固定模板</h3><button class="btn secondary" data-action="template">下载空白模板</button></div><div class="file-card"><h3>导入 Excel</h3><button class="btn secondary" data-action="import-xlsx">选择 Excel 文件</button></div><div class="file-card"><h3>导出当前数据</h3><button class="btn secondary" data-action="export-xlsx">导出 Excel</button></div></div><div class="section-title"><h2>照片与传输</h2></div><div class="panel"><div class="file-card"><h3>证件照批量导入</h3><button class="btn ghost" data-action="import-photos">选择照片 ZIP</button></div><div class="file-card"><h3>导出加密数据包</h3><button class="btn" data-action="export-package">生成传输包 / 备份</button></div><div class="file-card"><h3>导入加密数据包</h3><button class="btn ghost" data-action="import-package">选择数据包 ZIP</button></div></div>`;
+  const current = releases[0];
+  return `<div class="toolbar"><h2>设置</h2></div><div class="section-title"><h2>本机解锁</h2></div><div class="panel"><div class="file-card"><h3>6 位数字密码</h3><button class="btn ghost" data-action="change-passcode">修改解锁密码</button></div></div><div class="section-title"><h2>Excel 模板</h2></div><div class="panel"><div class="file-card"><h3>空白固定模板</h3><button class="btn secondary" data-action="template">下载空白模板</button></div><div class="file-card"><h3>导入 Excel</h3><button class="btn secondary" data-action="import-xlsx">选择 Excel 文件</button></div><div class="file-card"><h3>导出当前数据</h3><button class="btn secondary" data-action="export-xlsx">导出 Excel</button></div></div><div class="section-title"><h2>照片与传输</h2></div><div class="panel"><div class="file-card"><h3>证件照批量导入</h3><button class="btn ghost" data-action="import-photos">选择照片 ZIP</button></div><div class="file-card"><h3>导出加密数据包</h3><button class="btn" data-action="export-package">生成传输包 / 备份</button></div><div class="file-card"><h3>导入加密数据包</h3><button class="btn ghost" data-action="import-package">选择数据包 ZIP</button></div></div><div class="section-title"><h2>版本</h2></div><button class="version-card" data-action="version-history"><span><strong>v${esc(APP_VERSION)}</strong><small>更新于 ${esc(current.updatedAt)}</small></span><span class="chevron">›</span></button>`;
+}
+
+function versionHistory() {
+  showModal('历史更新记录', `<div class="release-list">${releases.map(release => `<section class="release"><div><strong>v${esc(release.version)}</strong><small>${esc(release.updatedAt)}</small></div><ul>${release.notes.map(note => `<li>${esc(note)}</li>`).join('')}</ul></section>`).join('')}</div>`, '关闭', async () => {});
 }
 function render() {
   if (!state) return gate();
@@ -244,6 +256,7 @@ app.addEventListener('click', async event => {
       case 'photo': photoForm(); break;
       case 'threshold': thresholdForm(); break;
       case 'change-passcode': passcodeForm(); break;
+      case 'version-history': versionHistory(); break;
       case 'toggle-id': { const el = document.querySelector('#id-number'); el.textContent = el.textContent.includes('*') ? student().idNumber || '—' : (student().idNumber ? `${student().idNumber.slice(0,4)}**********${student().idNumber.slice(-4)}` : '—'); break; }
       case 'toggle-done': { const record = state.records.find(r => r.id === button.dataset.id); if (record) { record.done = !record.done; record.updatedAt = now(); await persist(); } break; }
       case 'open-file': { const file = await getFile(button.dataset.id); if (!file) throw new Error('附件不存在'); const url = URL.createObjectURL(file.blob); modalRoot.innerHTML = `<div class="modal-shade"><div class="modal"><div class="modal-head"><h2>${esc(file.name)}</h2><button class="close" data-close>×</button></div><img class="photo-preview" src="${url}" alt="截图"><div class="modal-actions"><button class="btn ghost" data-close>关闭</button><a class="btn" href="${url}" download="${esc(file.name)}" style="text-align:center;text-decoration:none">保存图片</a></div></div></div>`; modalRoot.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { closeModal(); URL.revokeObjectURL(url); })); break; }
