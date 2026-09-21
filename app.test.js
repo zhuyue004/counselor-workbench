@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unzipSync, strFromU8 } from './vendor/fflate.js';
-import { APP_VERSION, emptyState, dateFromId, gradeStats, previewWorkbook, exportSheets } from './data.js';
+import { APP_VERSION, emptyState, dateFromId, gradeStats, previewWorkbook, exportSheets, isPasscode } from './data.js';
 import { COLUMNS, blankTemplate, createWorkbook } from './xlsx.js';
 import { makePackage, readPackage, mergePackage, packageName } from './transfer.js';
 
@@ -35,6 +35,13 @@ test('Excel preview matches by student ID, adds custom fields and avoids duplica
 test('birth date only comes from a valid mainland ID checksum', () => {
   assert.equal(dateFromId('11010519491231002X'),'1949-12-31');
   assert.equal(dateFromId('110105194912310021'),'');
+});
+
+test('local unlock password requires exactly six digits', () => {
+  assert.equal(isPasscode('123456'), true);
+  assert.equal(isPasscode('12345'), false);
+  assert.equal(isPasscode('1234567'), false);
+  assert.equal(isPasscode('12a456'), false);
 });
 
 test('encrypted ZIP roundtrip preserves attachments and named version timestamp', async () => {

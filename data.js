@@ -5,6 +5,7 @@ export const emptyState = () => ({ schema: 1, students: {}, grades: [], funding:
 export const uid = () => crypto.randomUUID?.() || [...crypto.getRandomValues(new Uint8Array(16))].map(v => v.toString(16).padStart(2, '0')).join('');
 export const now = () => new Date().toISOString();
 export const clean = value => String(value ?? '').trim();
+export const isPasscode = value => /^\d{6}$/.test(String(value ?? ''));
 export const dateFromId = id => {
   const text = clean(id);
   if (!/^\d{17}[\dXx]$/.test(text)) return '';
@@ -57,6 +58,7 @@ const decrypt = async envelope => {
   if (!sessionKey) throw new Error('请先解锁应用');
   return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: envelope.iv }, sessionKey, envelope.data));
 };
+const decryptWith = async (key, envelope) => new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: envelope.iv }, key, envelope.data));
 export function openDb() {
   if (!dbPromise) dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open('counselor-workbench-v1', 1);
@@ -70,20 +72,25 @@ export function openDb() {
   return dbPromise;
 }
 export async function hasSecurity() { const db = await openDb(); return !!await request(db.transaction('app').objectStore('app').get('security')); }
+export async function usesLegacySecurity() {
+  const db = await openDb(); const security = await request(db.transaction('app').objectStore('app').get('security'));
+  return !!security && security.mode !== 'pin6';
+}
 export async function setupSecurity(password) {
-  if (password.length < 8) throw new Error('解锁密码至少需要 8 位');
+  if (!isPasscode(password)) throw new Error('解锁密码必须是 6 位数字');
   if (await hasSecurity()) throw new Error('已设置解锁密码');
   const salt = crypto.getRandomValues(new Uint8Array(16));
   sessionKey = await derive(password, salt);
   const verifier = await encrypt(utf8.encode('counselor-workbench-v1'));
   const db = await openDb();
-  await request(db.transaction('app', 'readwrite').objectStore('app').put({ salt, verifier }, 'security'));
+  await request(db.transaction('app', 'readwrite').objectStore('app').put({ mode: 'pin6', salt, verifier }, 'security'));
   await saveState(emptyState());
 }
 export async function unlockSecurity(password) {
   const db = await openDb();
   const security = await request(db.transaction('app').objectStore('app').get('security'));
   if (!security) throw new Error('尚未设置解锁密码');
+  if (security.mode === 'pin6' && !isPasscode(password)) throw new Error('请输入 6 位数字密码');
   sessionKey = await derive(password, security.salt);
   try { if (decode.decode(await decrypt(security.verifier)) !== 'counselor-workbench-v1') throw new Error(); }
   catch { sessionKey = undefined; throw new Error('解锁密码不正确'); }
@@ -123,6 +130,35 @@ export async function putFiles(files) {
   const db = await openDb(); const tx = db.transaction('files', 'readwrite');
   for (const record of records) tx.objectStore('files').put(record);
   await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
+}
+export async function changeSecurity(currentPassword, nextPassword) {
+  if (!isPasscode(nextPassword)) throw new Error('新密码必须是 6 位数字');
+  const db = await openDb();
+  const security = await request(db.transaction('app').objectStore('app').get('security'));
+  if (!security) throw new Error('尚未设置解锁密码');
+  const currentKey = await derive(currentPassword, security.salt);
+  try {
+    if (decode.decode(await decryptWith(currentKey, security.verifier)) !== 'counselor-workbench-v1') throw new Error();
+  } catch { throw new Error('当前解锁密码不正确'); }
+  const oldSessionKey = sessionKey;
+  try {
+    sessionKey = currentKey;
+    const currentState = await loadState();
+    const currentFiles = await allFiles();
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    sessionKey = await derive(nextPassword, salt);
+    const verifier = await encrypt(utf8.encode('counselor-workbench-v1'));
+    const stateRecord = await encrypt(utf8.encode(JSON.stringify(currentState)));
+    const fileRecords = await Promise.all(currentFiles.map(encodeFile));
+    const tx = db.transaction(['app', 'files'], 'readwrite');
+    const requests = [tx.objectStore('app').put({ mode: 'pin6', salt, verifier }, 'security'), tx.objectStore('app').put(stateRecord, 'state')];
+    for (const record of fileRecords) requests.push(tx.objectStore('files').put(record));
+    await Promise.all(requests.map(request));
+    await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
+  } catch (error) {
+    sessionKey = oldSessionKey;
+    throw error;
+  }
 }
 
 function rowsToObjects(rows) {
