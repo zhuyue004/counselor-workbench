@@ -1,6 +1,6 @@
 import { COLUMNS } from './xlsx.js';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 export const emptyState = () => ({ schema: 1, students: {}, grades: [], funding: [], records: [], settings: { threshold: 1 }, updatedAt: new Date().toISOString() });
 export const uid = () => crypto.randomUUID?.() || [...crypto.getRandomValues(new Uint8Array(16))].map(v => v.toString(16).padStart(2, '0')).join('');
 export const now = () => new Date().toISOString();
@@ -103,8 +103,9 @@ export async function loadState() {
 }
 export async function saveState(state) {
   state.updatedAt = now();
+  const encryptedState = await encrypt(utf8.encode(JSON.stringify(state)));
   const db = await openDb();
-  await request(db.transaction('app', 'readwrite').objectStore('app').put(await encrypt(utf8.encode(JSON.stringify(state))), 'state'));
+  await request(db.transaction('app', 'readwrite').objectStore('app').put(encryptedState, 'state'));
 }
 const encodeFile = async file => {
   const meta = utf8.encode(JSON.stringify({ id: file.id, studentId: file.studentId, kind: file.kind, name: file.name, type: file.type, createdAt: file.createdAt }));
@@ -122,7 +123,11 @@ const decodeFile = async record => {
   const meta = JSON.parse(decode.decode(bytes.subarray(4, 4 + length)));
   return { ...meta, blob: new Blob([bytes.subarray(4 + length)], { type: meta.type }) };
 };
-export async function putFile(file) { const db = await openDb(); await request(db.transaction('files', 'readwrite').objectStore('files').put(await encodeFile(file))); }
+export async function putFile(file) {
+  const encryptedFile = await encodeFile(file);
+  const db = await openDb();
+  await request(db.transaction('files', 'readwrite').objectStore('files').put(encryptedFile));
+}
 export async function getFile(id) { const db = await openDb(); return decodeFile(await request(db.transaction('files').objectStore('files').get(id))); }
 export async function allFiles() { const db = await openDb(); return Promise.all((await request(db.transaction('files').objectStore('files').getAll())).map(decodeFile)); }
 export async function putFiles(files) {

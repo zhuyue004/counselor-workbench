@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { unzipSync, strFromU8 } from './vendor/fflate.js';
 import { APP_VERSION, emptyState, dateFromId, gradeStats, previewWorkbook, exportSheets, isPasscode } from './data.js';
 import { COLUMNS, blankTemplate, createWorkbook } from './xlsx.js';
@@ -42,6 +43,12 @@ test('local unlock password requires exactly six digits', () => {
   assert.equal(isPasscode('12345'), false);
   assert.equal(isPasscode('1234567'), false);
   assert.equal(isPasscode('12a456'), false);
+});
+
+test('encryption finishes before IndexedDB write transactions begin', () => {
+  const source = readFileSync(new URL('./data.js', import.meta.url), 'utf8');
+  assert.match(source, /const encryptedState = await encrypt\(utf8\.encode\(JSON\.stringify\(state\)\)\);\s*const db = await openDb\(\);\s*await request\(db\.transaction\('app', 'readwrite'\)\.objectStore\('app'\)\.put\(encryptedState, 'state'\)\)/s);
+  assert.match(source, /const encryptedFile = await encodeFile\(file\);\s*const db = await openDb\(\);\s*await request\(db\.transaction\('files', 'readwrite'\)\.objectStore\('files'\)\.put\(encryptedFile\)\)/s);
 });
 
 test('encrypted ZIP roundtrip preserves attachments and named version timestamp', async () => {
