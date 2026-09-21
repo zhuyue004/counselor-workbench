@@ -17,7 +17,20 @@ const displayName = value => clean(value) || '—';
 const studentName = id => state.students[id] ? displayName(state.students[id].name) : id;
 const studentInitial = s => displayName(s?.name).slice(0, 1);
 const courseLabel = grade => grade.courseName || grade.courseCode || '未命名课程';
+const flatIcon = name => ({
+  home: '<svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10H3z"/><path d="M9 21v-6h6v6"/></svg>',
+  students: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2.5"/><path d="M5.5 17c.8-2.2 2-3.3 3.5-3.3s2.7 1.1 3.5 3.3M15 9h3M15 13h3M15 17h2"/></svg>',
+  work: '<svg viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 7V5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2"/></svg>',
+  todo: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="m8 10 2 2 4-4M8 16h8"/></svg>',
+  settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.1 2.1-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2h-3v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-2.1-2.1.1-.1A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.5-1H5.3v-3h.2A1.7 1.7 0 0 0 7 10a1.7 1.7 0 0 0-.3-1.9l-.1-.1 2.1-2.1.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5v-.2h3v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 2.1 2.1-.1.1A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 1.5 1h.2v3h-.2a1.7 1.7 0 0 0-1.5 1Z"/></svg>',
+  organization: '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M12 7v5M6 17v-2h12v2M6 15v-3h12"/></svg>',
+  grades: '<svg viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><path d="m7 16 4-4 3 2 5-6"/></svg>',
+  funding: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M15 9.5c-.5-.8-1.5-1.3-3-1.3-1.7 0-2.8.8-2.8 2 0 3.3 5.7 1.5 5.7 4.4 0 1.2-1.1 2-2.9 2-1.4 0-2.5-.5-3.1-1.3M12 6.5v11"/></svg>',
+  mental: '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a3.7 3.7 0 0 1 6.6-2.3L12 8.3l.4-.6A3.7 3.7 0 0 1 19 10c0 5.6-7 10-7 10Z"/></svg>',
+  contact: '<svg viewBox="0 0 24 24"><path d="M6 4h3l1.5 4-2 1.4c1.1 2.3 2.9 4.1 5.2 5.2l1.4-2L19 14v3c0 1.1-.9 2-2 2C10.4 19 5 13.6 5 7c0-1.1.9-2 1-3Z"/></svg>'
+}[name] || '');
 const releases = [
+  { version: '1.0.10', updatedAt: '2026-09-21 17:12', notes: ['底部五个导航和工作模块图标统一为扁平线框设计。'] },
   { version: '1.0.9', updatedAt: '2026-09-21 17:05', notes: ['修复 iPhone 学生搜索框输入文字时被页面重绘中断的问题。'] },
   { version: '1.0.8', updatedAt: '2026-09-21 17:00', notes: ['界面调整为更接近 iPhone 原生的分组列表和联系人详情样式。', '首页、学生、工作、待办和设置统一视觉层级。'] },
   { version: '1.0.7', updatedAt: '2026-09-21 16:45', notes: ['工作模块支持选择学生后直接新增成绩、资助及各类工作记录。', '完善待办筛选、资料完整度、导入反馈、备份状态和心理工作字段。'] },
@@ -79,7 +92,7 @@ async function gate() {
 }
 
 function shell(body) {
-  app.innerHTML = `<div class="shell"><header class="topbar"><div class="toprow"><div class="brand">辅导员工作台</div><button class="icon-btn" data-action="lock" aria-label="锁定">⌁</button></div></header><main class="content">${body}</main><nav class="tabbar five-tabs" aria-label="主导航">${[['home','⌂','首页'],['students','◫','学生'],['work','▦','工作'],['alerts','✓','待办'],['data','⚙','设置']].map(([key, icon, label]) => `<button data-view="${key}" class="${view === key ? 'active' : ''}"><span class="tab-icon">${icon}</span><span>${label}</span></button>`).join('')}</nav></div>`;
+  app.innerHTML = `<div class="shell"><header class="topbar"><div class="toprow"><div class="brand">辅导员工作台</div><button class="icon-btn" data-action="lock" aria-label="锁定">⌁</button></div></header><main class="content">${body}</main><nav class="tabbar five-tabs" aria-label="主导航">${[['home','首页'],['students','学生'],['work','工作'],['todo','待办'],['settings','设置']].map(([key, label]) => `<button data-view="${key === 'todo' ? 'alerts' : key === 'settings' ? 'data' : key}" class="${(key === 'todo' ? 'alerts' : key === 'settings' ? 'data' : key) === view ? 'active' : ''}"><span class="tab-icon">${flatIcon(key)}</span><span>${label}</span></button>`).join('')}</nav></div>`;
   if (photoUrl) { URL.revokeObjectURL(photoUrl); photoUrl = ''; }
   if (view === 'students' && selectedId) loadPhoto(selectedId);
 }
@@ -134,16 +147,12 @@ function alertsView() {
 }
 
 const workModules = [
-  ['organization', '◇', '组织发展'],
-  ['grades', '≋', '学业成绩'],
-  ['funding', '¥', '资助工作'],
-  ['mental', '♡', '心理工作'],
-  ['contact', '⌁', '家校联系']
+  ['organization', '组织发展'], ['grades', '学业成绩'], ['funding', '资助工作'], ['mental', '心理工作'], ['contact', '家校联系']
 ];
 function workView() {
   if (workModule) return workDetailView();
   const counts = { organization: state.records.filter(r => r.type === '组织发展').length, grades: state.grades.length, funding: state.funding.length, mental: state.records.filter(r => r.type === '心理工作').length, contact: state.records.filter(r => r.type === '家校联系').length };
-  return `<div class="toolbar"><h2>工作</h2></div><div class="panel work-list">${workModules.map(([key, icon, label]) => `<button class="work-card" data-action="work-module" data-module="${key}"><span>${icon}</span><strong>${label}</strong><small>${counts[key]} 条</small><i>›</i></button>`).join('')}</div>`;
+  return `<div class="toolbar"><h2>工作</h2></div><div class="panel work-list">${workModules.map(([key, label]) => `<button class="work-card" data-action="work-module" data-module="${key}"><span>${flatIcon(key)}</span><strong>${label}</strong><small>${counts[key]} 条</small><i>›</i></button>`).join('')}</div>`;
 }
 function workRecordList(type, emptyTitle) {
   const query = clean(workSearch).toLowerCase(), records = state.records.filter(record => record.type === type && [studentName(record.studentId), state.students[record.studentId]?.className, record.date, record.summary, record.subject].some(value => clean(value).toLowerCase().includes(query))).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
@@ -152,7 +161,7 @@ function workRecordList(type, emptyTitle) {
 function workDetailView() {
   const module = workModules.find(([key]) => key === workModule);
   if (!module) { workModule = ''; return workView(); }
-  const [, , title] = module;
+  const [, title] = module;
   let body = '';
   if (workModule === 'grades') {
     const query = clean(workSearch).toLowerCase(), threshold = Number(state.settings.threshold || 1), warnings = selectedTerm ? Object.values(state.students).map(s => ({ s, count: gradeStats(state,s.id,selectedTerm).semester })).filter(item => item.count >= threshold && [studentName(item.s.id), item.s.className, item.s.major].some(value => clean(value).toLowerCase().includes(query))).sort((a,b) => b.count - a.count) : [];
