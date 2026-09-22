@@ -13,7 +13,7 @@ let lookupTimer;
 
 function show(text, isError = false) { message.textContent = text; message.className = `leave-message ${text ? (isError ? 'error' : 'success') : ''}`; }
 async function call(path, options = {}) {
-  const response = await fetch(`${API}${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  const response = await fetch(`${API}${path}`, { ...options, headers: { 'Content-Type': 'text/plain;charset=UTF-8', ...(options.headers || {}) } });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || '服务暂不可用，请稍后重试。');
   return data;

@@ -208,7 +208,8 @@ const leaveLink = () => {
   return url.href;
 };
 async function leaveApi(path, options = {}) {
-  const response = await fetch(`${LEAVE_API}${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  // text/plain keeps cross-origin form submissions "simple" so CloudBase's gateway does not need to handle a browser preflight request.
+  const response = await fetch(`${LEAVE_API}${path}`, { ...options, headers: { 'Content-Type': 'text/plain;charset=UTF-8', ...(options.headers || {}) } });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || '请假服务暂不可用，请稍后重试。');
   return data;
