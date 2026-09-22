@@ -31,6 +31,7 @@ const flatIcon = name => ({
   dorm: '<svg viewBox="0 0 24 24"><path d="M4 21V4h16v17M8 8h2M14 8h2M8 12h2M14 12h2M10 21v-5h4v5"/></svg>'
 }[name] || '');
 const releases = [
+  { version: '1.0.15', updatedAt: '2026-09-22 09:15', notes: ['宿舍分布支持按楼号、楼层、房间号生成分布图和 Excel。'] },
   { version: '1.0.14', updatedAt: '2026-09-22 09:00', notes: ['本人电话、家长电话和身份证号支持独立显示或隐藏。', '工作模块新增按宿舍聚合的宿舍分布。'] },
   { version: '1.0.13', updatedAt: '2026-09-21 17:22', notes: ['待办模块支持直接新增待办，并显示今日和逾期数量。'] },
   { version: '1.0.12', updatedAt: '2026-09-21 17:18', notes: ['学生模块新增班级切换，可只查看指定班级学生。'] },
@@ -167,6 +168,33 @@ function workRecordList(type, emptyTitle) {
   const query = clean(workSearch).toLowerCase(), records = state.records.filter(record => record.type === type && [studentName(record.studentId), state.students[record.studentId]?.className, record.date, record.summary, record.subject].some(value => clean(value).toLowerCase().includes(query))).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
   return `<div class="panel">${records.length ? records.map(record => `<button class="list-row" data-student="${esc(record.studentId)}"><div class="avatar">${type === '心理工作' ? '♡' : type === '组织发展' ? '◇' : '⌁'}</div><div class="row-main"><strong>${esc(studentName(record.studentId))}</strong><small>${fmtDate(record.date)} · ${esc(record.summary || '无摘要')}</small></div><span class="chevron">›</span></button>`).join('') : empty(emptyTitle)}</div>`;
 }
+function parseDorm(value) {
+  const match = clean(value).replace('＃', '#').match(/^(\d+)#(\d)(\d{2})$/);
+  return match ? { building: match[1], floor: match[2], room: match[3] } : undefined;
+}
+function dormDistribution() {
+  const buildings = {};
+  Object.values(state.students).forEach(student => {
+    const dorm = parseDorm(student.dorm); if (!dorm) return;
+    const building = buildings[dorm.building] ||= { floors: new Set(), rooms: {} };
+    building.floors.add(dorm.floor);
+    (building.rooms[dorm.room] ||= {})[dorm.floor] ||= [];
+    building.rooms[dorm.room][dorm.floor].push(student);
+  });
+  const sheets = {}, previews = [];
+  Object.entries(buildings).sort(([a],[b]) => Number(a) - Number(b)).forEach(([building, data]) => {
+    const floors = [...data.floors].sort((a,b) => Number(a) - Number(b));
+    const rows = Object.keys(data.rooms).sort((a,b) => Number(a) - Number(b)).map(room => [room, ...floors.map(floor => (data.rooms[room][floor] || []).map(student => `${student.className || '未分班'} ${studentName(student.id)}`).join('\n'))]);
+    sheets[`${building}号楼`] = [['房间号 / 楼层', ...floors.map(floor => `${floor}层`)], ...rows];
+    previews.push({ building, floors, rows });
+  });
+  return { sheets, previews };
+}
+function dormMapForm() {
+  const distribution = dormDistribution();
+  const body = distribution.previews.length ? `<div class="dorm-map">${distribution.previews.map(({building,floors,rows}) => `<section><h3>${esc(building)}号楼</h3><div class="map-scroll"><table><thead><tr><th>房间号</th>${floors.map(floor => `<th>${esc(floor)}层</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><th>${esc(row[0])}</th>${row.slice(1).map(value => `<td>${esc(value).replaceAll('\n','<br>')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></section>`).join('')}</div>` : '<div class="empty"><strong>暂无符合“楼号#楼层房间号”格式的宿舍信息</strong></div>';
+  showModal('宿舍分布图', body, '下载 Excel', async () => { if (!Object.keys(distribution.sheets).length) throw new Error('暂无可导出的宿舍数据'); download(createWorkbook(distribution.sheets), `宿舍分布_${stamp()}.xlsx`); });
+}
 function workDetailView() {
   const module = workModules.find(([key]) => key === workModule);
   if (!module) { workModule = ''; return workView(); }
@@ -185,7 +213,7 @@ function workDetailView() {
   else if (workModule === 'mental') body = workRecordList('心理工作', '暂无心理工作记录');
   else body = workRecordList('家校联系', '暂无家校联系记录');
   const action = workModule === 'grades' ? 'work-add-grade' : workModule === 'funding' ? 'work-add-funding' : 'work-add-record';
-  return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2>${workModule === 'dorm' ? '' : `<button class="btn small" data-action="${action}" data-type="${esc(title)}">＋ 新增</button>`}</div>${workModule === 'dorm' ? '' : `<div class="search-wrap"><input class="search" id="work-search" type="search" placeholder="搜索学生、班级、日期或内容" value="${esc(workSearch)}"></div>`}${body}`;
+  return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2>${workModule === 'dorm' ? `<button class="btn small" data-action="dorm-map">分布图</button>` : `<button class="btn small" data-action="${action}" data-type="${esc(title)}">＋ 新增</button>`}</div>${workModule === 'dorm' ? '' : `<div class="search-wrap"><input class="search" id="work-search" type="search" placeholder="搜索学生、班级、日期或内容" value="${esc(workSearch)}"></div>`}${body}`;
 }
 function dataView() {
   const current = releases[0];
@@ -319,6 +347,7 @@ app.addEventListener('click', async event => {
       case 'back-students': selectedId = ''; render(); break;
       case 'back-work': workModule = ''; render(); break;
       case 'work-module': workModule = button.dataset.module; render(); window.scrollTo(0, 0); break;
+      case 'dorm-map': dormMapForm(); break;
       case 'todo-filter': todoFilter = button.dataset.filter; render(); break;
       case 'add-todo': todoForm(); break;
       case 'work-add-grade': pickStudent(() => gradeForm()); break;
