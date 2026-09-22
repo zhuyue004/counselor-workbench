@@ -31,6 +31,7 @@ const flatIcon = name => ({
   dorm: '<svg viewBox="0 0 24 24"><path d="M4 21V4h16v17M8 8h2M14 8h2M8 12h2M14 12h2M10 21v-5h4v5"/></svg>'
 }[name] || '');
 const releases = [
+  { version: '1.0.17', updatedAt: '2026-09-22 10:15', notes: ['宿舍分布图与 Excel 改为横向房间号、纵向楼层，楼层从高到低排列。', '宿舍分布图左右滑动时，楼层列保持固定。'] },
   { version: '1.0.16', updatedAt: '2026-09-22 10:00', notes: ['学生详情中的敏感信息改为一键显示或隐藏。', '学生搜索会在输入时即时筛选并提示无匹配结果。'] },
   { version: '1.0.15', updatedAt: '2026-09-22 09:15', notes: ['宿舍分布支持按楼号、楼层、房间号生成分布图和 Excel。'] },
   { version: '1.0.14', updatedAt: '2026-09-22 09:00', notes: ['本人电话、家长电话和身份证号支持独立显示或隐藏。', '工作模块新增按宿舍聚合的宿舍分布。'] },
@@ -185,16 +186,17 @@ function dormDistribution() {
   });
   const sheets = {}, previews = [];
   Object.entries(buildings).sort(([a],[b]) => Number(a) - Number(b)).forEach(([building, data]) => {
-    const floors = [...data.floors].sort((a,b) => Number(a) - Number(b));
-    const rows = Object.keys(data.rooms).sort((a,b) => Number(a) - Number(b)).map(room => [room, ...floors.map(floor => (data.rooms[room][floor] || []).map(student => `${student.className || '未分班'} ${studentName(student.id)}`).join('\n'))]);
-    sheets[`${building}号楼`] = [['房间号 / 楼层', ...floors.map(floor => `${floor}层`)], ...rows];
-    previews.push({ building, floors, rows });
+    const floors = [...data.floors].sort((a,b) => Number(b) - Number(a));
+    const rooms = Object.keys(data.rooms).sort((a,b) => Number(a) - Number(b));
+    const rows = floors.map(floor => [floor, ...rooms.map(room => (data.rooms[room][floor] || []).map(student => `${student.className || '未分班'} ${studentName(student.id)}`).join('\n'))]);
+    sheets[`${building}号楼`] = [['楼层 / 房间号', ...rooms], ...rows.map(([floor, ...cells]) => [`${floor}层`, ...cells])];
+    previews.push({ building, floors, rooms, rows });
   });
   return { sheets, previews };
 }
 function dormMapForm() {
   const distribution = dormDistribution();
-  const body = distribution.previews.length ? `<div class="dorm-map">${distribution.previews.map(({building,floors,rows}) => `<section><h3>${esc(building)}号楼</h3><div class="map-scroll"><table><thead><tr><th>房间号</th>${floors.map(floor => `<th>${esc(floor)}层</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><th>${esc(row[0])}</th>${row.slice(1).map(value => `<td>${esc(value).replaceAll('\n','<br>')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></section>`).join('')}</div>` : '<div class="empty"><strong>暂无符合“楼号#楼层房间号”格式的宿舍信息</strong></div>';
+  const body = distribution.previews.length ? `<div class="dorm-map">${distribution.previews.map(({building,rooms,rows}) => `<section><h3>${esc(building)}号楼</h3><div class="map-scroll"><table><thead><tr><th>楼层</th>${rooms.map(room => `<th>${esc(room)}室</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><th>${esc(row[0])}层</th>${row.slice(1).map(value => `<td>${esc(value).replaceAll('\n','<br>')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></section>`).join('')}</div>` : '<div class="empty"><strong>暂无符合“楼号#楼层房间号”格式的宿舍信息</strong></div>';
   showModal('宿舍分布图', body, '下载 Excel', async () => { if (!Object.keys(distribution.sheets).length) throw new Error('暂无可导出的宿舍数据'); download(createWorkbook(distribution.sheets), `宿舍分布_${stamp()}.xlsx`); });
 }
 function workDetailView() {
