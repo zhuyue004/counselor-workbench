@@ -10,6 +10,7 @@ const toastEl = document.querySelector('#toast');
 const inputs = { xlsx: document.querySelector('#xlsx-input'), photozip: document.querySelector('#photozip-input'), package: document.querySelector('#package-input') };
 let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer, localMigrationAvailable = false, cloudSyncStatus = '本机资料', cloudSyncAt = '', registrationDraft, resetDraft, localRevision = 0;
 const today = () => new Date().toISOString().slice(0, 10);
+const LEAVE_API = 'https://counselor-workbench-d5bo59891098-1493520377.ap-shanghai.app.tcloudbase.com/leave-api';
 const dirtyKey = accountId => `counselor-workbench-cloud-dirty:${accountId}`;
 const LOCAL_WORKSPACE_ID = 'local-workspace';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
@@ -31,9 +32,11 @@ const flatIcon = name => ({
   funding: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M15 9.5c-.5-.8-1.5-1.3-3-1.3-1.7 0-2.8.8-2.8 2 0 3.3 5.7 1.5 5.7 4.4 0 1.2-1.1 2-2.9 2-1.4 0-2.5-.5-3.1-1.3M12 6.5v11"/></svg>',
   mental: '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a3.7 3.7 0 0 1 6.6-2.3L12 8.3l.4-.6A3.7 3.7 0 0 1 19 10c0 5.6-7 10-7 10Z"/></svg>',
   contact: '<svg viewBox="0 0 24 24"><path d="M6 4h3l1.5 4-2 1.4c1.1 2.3 2.9 4.1 5.2 5.2l1.4-2L19 14v3c0 1.1-.9 2-2 2C10.4 19 5 13.6 5 7c0-1.1.9-2 1-3Z"/></svg>',
-  dorm: '<svg viewBox="0 0 24 24"><path d="M4 21V4h16v17M8 8h2M14 8h2M8 12h2M14 12h2M10 21v-5h4v5"/></svg>'
+  dorm: '<svg viewBox="0 0 24 24"><path d="M4 21V4h16v17M8 8h2M14 8h2M8 12h2M14 12h2M10 21v-5h4v5"/></svg>',
+  leave: '<svg viewBox="0 0 24 24"><path d="M7 3h10v18H7z"/><path d="M9 8h6M9 12h6M9 16h3"/><path d="m4 8 1.5 1.5L8 6"/></svg>'
 }[name] || '');
 const releases = [
+  { version: '1.0.25', updatedAt: '2026-09-22 16:20', notes: ['工作模块新增请假管理和通用学生请假二维码。', '学生按学号自动带出姓名后可提交上课或离校请假；首页显示已批准离校请假的返校提醒。'] },
   { version: '1.0.24', updatedAt: '2026-09-22 14:30', notes: ['修复 CloudBase 注册和重置密码接口的鉴权方式，验证码请求不再携带不适用的客户端密钥。'] },
   { version: '1.0.23', updatedAt: '2026-09-22 12:30', notes: ['打开应用直接进入本机工作台，不再要求登录。', '学生资料仅在本机保存；点击云端同步时才登录账号并上传当前资料。'] },
   { version: '1.0.22', updatedAt: '2026-09-22 12:00', notes: ['注册时将“账号”改为中文用户名，要求至少两个汉字。', '用户名用于显示；登录继续使用注册邮箱和密码。'] },
@@ -118,6 +121,8 @@ async function bootLocalWorkspace() {
   state = await loadAccountState(LOCAL_WORKSPACE_ID);
   if (!state && saved) state = await loadAccountState(saved.uid);
   if (!state) state = emptyState();
+  state.settings ||= { threshold: 1 };
+  state.leaveRequests ||= [];
   await saveAccountState(LOCAL_WORKSPACE_ID, state);
   localMigrationAvailable = await hasSecurity();
   cloudSyncStatus = saved ? '本机资料已加载，可手动同步' : '本机资料已加载';
@@ -136,7 +141,8 @@ function homeView() {
   const warnings = selectedTerm ? Object.keys(state.students).filter(id => gradeStats(state, id, selectedTerm).semester >= threshold) : [];
   const due = state.records.filter(r => r.todo && !r.done && r.dueDate && r.dueDate <= today()).sort((a,b) => a.dueDate.localeCompare(b.dueDate));
   const recent = [...state.records].sort((a,b) => (b.date || '').localeCompare(a.date || '')).slice(0, 4), incomplete = Object.values(state.students).filter(s => profileMissing(s).length);
-  return `<div class="hero"><div class="kicker">今日概览</div><strong>${total} 名学生</strong></div><div class="stats"><button class="stat" data-view="students"><strong>${total}</strong><span>学生档案</span></button><button class="stat warn" data-view="work"><strong>${warnings.length}</strong><span>学业预警</span></button><button class="stat due" data-view="alerts"><strong>${due.length}</strong><span>到期待办</span></button></div><div class="section-title"><h2>优先跟进</h2></div><div class="panel list">${due.length ? due.slice(0, 4).map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">◷</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.todo)}</strong><small>到期 ${fmtDate(r.dueDate)} · ${esc(r.type)}</small></div><span class="badge red">待办</span></button>`).join('') : empty('暂无待跟进事项')}</div><div class="section-title"><h2>资料待补</h2><small>${incomplete.length} 人</small></div><div class="panel list">${incomplete.length ? incomplete.slice(0,3).map(s => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(studentName(s.id))}</strong><small>缺少：${esc(profileMissing(s).join('、'))}</small></div><span class="chevron">›</span></button>`).join('') : empty('资料已完整')}</div><div class="section-title"><h2>最近记录</h2><small>${state.records.length} 条</small></div><div class="panel list">${recent.length ? recent.map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">✎</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.type)}</strong><small>${fmtDate(r.date)} · ${esc(r.summary || '无摘要')}</small></div><span class="chevron">›</span></button>`).join('') : empty('还没有工作记录')}</div>`;
+  const returns = (state.leaveRequests || []).filter(row => row.leave_type === '离校请假' && row.status === '已批准' && row.return_at && row.return_at.slice(0,10) >= today()).sort((a,b) => a.return_at.localeCompare(b.return_at));
+  return `<div class="hero"><div class="kicker">今日概览</div><strong>${total} 名学生</strong></div><div class="stats"><button class="stat" data-view="students"><strong>${total}</strong><span>学生档案</span></button><button class="stat warn" data-view="work"><strong>${warnings.length}</strong><span>学业预警</span></button><button class="stat due" data-view="alerts"><strong>${due.length}</strong><span>到期待办</span></button></div>${returns.length ? `<div class="section-title"><h2>返校提醒</h2><small>${returns.length} 人</small></div><div class="panel list">${returns.slice(0,4).map(row => `<button class="list-row" data-action="open-leave"><div class="avatar">↩</div><div class="row-main"><strong>${esc(row.student_name)} · 离校请假</strong><small>预计返校 ${esc(row.return_at.replace('T',' ').slice(0,16))}</small></div><span class="badge ${row.return_at.slice(0,10) === today() ? 'red' : 'green'}">${row.return_at.slice(0,10) === today() ? '今日返校' : '待返校'}</span></button>`).join('')}</div>` : ''}<div class="section-title"><h2>优先跟进</h2></div><div class="panel list">${due.length ? due.slice(0, 4).map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">◷</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.todo)}</strong><small>到期 ${fmtDate(r.dueDate)} · ${esc(r.type)}</small></div><span class="badge red">待办</span></button>`).join('') : empty('暂无待跟进事项')}</div><div class="section-title"><h2>资料待补</h2><small>${incomplete.length} 人</small></div><div class="panel list">${incomplete.length ? incomplete.slice(0,3).map(s => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(studentName(s.id))}</strong><small>缺少：${esc(profileMissing(s).join('、'))}</small></div><span class="chevron">›</span></button>`).join('') : empty('资料已完整')}</div><div class="section-title"><h2>最近记录</h2><small>${state.records.length} 条</small></div><div class="panel list">${recent.length ? recent.map(r => `<button class="list-row" data-student="${esc(r.studentId)}"><div class="avatar">✎</div><div class="row-main"><strong>${esc(studentName(r.studentId))} · ${esc(r.type)}</strong><small>${fmtDate(r.date)} · ${esc(r.summary || '无摘要')}</small></div><span class="chevron">›</span></button>`).join('') : empty('还没有工作记录')}</div>`;
 }
 function empty(title) { return `<div class="empty"><strong>${esc(title)}</strong></div>`; }
 function studentsView() {
@@ -186,12 +192,62 @@ function alertsView() {
 }
 
 const workModules = [
-  ['organization', '组织发展'], ['grades', '学业成绩'], ['funding', '资助工作'], ['mental', '心理工作'], ['contact', '家校联系'], ['dorm', '宿舍分布']
+  ['leave', '请假管理'], ['organization', '组织发展'], ['grades', '学业成绩'], ['funding', '资助工作'], ['mental', '心理工作'], ['contact', '家校联系'], ['dorm', '宿舍分布']
 ];
 function workView() {
   if (workModule) return workDetailView();
-  const counts = { organization: state.records.filter(r => r.type === '组织发展').length, grades: state.grades.length, funding: state.funding.length, mental: state.records.filter(r => r.type === '心理工作').length, contact: state.records.filter(r => r.type === '家校联系').length, dorm: new Set(Object.values(state.students).map(s => s.dorm).filter(Boolean)).size };
+  const counts = { leave: (state.leaveRequests || []).filter(row => row.status === '待审批').length, organization: state.records.filter(r => r.type === '组织发展').length, grades: state.grades.length, funding: state.funding.length, mental: state.records.filter(r => r.type === '心理工作').length, contact: state.records.filter(r => r.type === '家校联系').length, dorm: new Set(Object.values(state.students).map(s => s.dorm).filter(Boolean)).size };
   return `<div class="toolbar"><h2>工作</h2></div><div class="panel work-list">${workModules.map(([key, label]) => `<button class="work-card" data-action="work-module" data-module="${key}"><span>${flatIcon(key)}</span><strong>${label}</strong><small>${counts[key]} 条</small><i>›</i></button>`).join('')}</div>`;
+}
+const randomToken = () => [...crypto.getRandomValues(new Uint8Array(24))].map(value => value.toString(16).padStart(2, '0')).join('');
+const leaveLink = () => {
+  const token = state.settings.leave?.formToken;
+  if (!token) return '';
+  const url = new URL('leave.html', location.href);
+  url.searchParams.set('form', token);
+  return url.href;
+};
+async function leaveApi(path, options = {}) {
+  const response = await fetch(`${LEAVE_API}${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || '请假服务暂不可用，请稍后重试。');
+  return data;
+}
+async function configureLeaveForm() {
+  const user = account();
+  if (!user) { gate('signin'); return; }
+  if (!Object.keys(state.students).length) throw new Error('请先导入或新增学生档案，再生成请假二维码。');
+  const current = state.settings.leave || { formToken: randomToken(), managerToken: randomToken() };
+  await leaveApi('/configure', { method: 'POST', body: JSON.stringify({ ownerId: user.uid, formToken: current.formToken, managerToken: current.managerToken, roster: Object.values(state.students).map(student => ({ id: student.id, name: student.name })) }) });
+  state.settings.leave = { ...current, configuredAt: now() };
+  await persist();
+  notify('请假二维码已更新，已同步学生名单');
+}
+async function refreshLeaveRequests() {
+  const config = state.settings.leave;
+  if (!config) throw new Error('请先启用请假二维码。');
+  const result = await leaveApi('/requests', { method: 'POST', body: JSON.stringify({ formToken: config.formToken, managerToken: config.managerToken }) });
+  state.leaveRequests = result.rows || [];
+  await persist();
+  notify('请假记录已刷新');
+}
+async function updateLeaveRequest(id, status) {
+  const config = state.settings.leave;
+  await leaveApi('/review', { method: 'POST', body: JSON.stringify({ formToken: config.formToken, managerToken: config.managerToken, id, status }) });
+  await refreshLeaveRequests();
+}
+function leaveManagementView() {
+  const config = state.settings.leave;
+  if (!config) return `<div class="notice">启用后会生成一个通用二维码。学生扫码填写学号，系统只会带出该学号对应的姓名。</div><div class="panel pad" style="margin-top:12px"><strong>尚未启用请假二维码</strong><p class="muted tiny">先登录云端账号，再将当前学生名单同步到请假服务。</p><button class="btn" data-action="leave-setup">启用并生成二维码</button></div>`;
+  const rows = state.leaveRequests || [];
+  return `<div class="notice">学生名单更新后，请点“更新名单”，新学生即可通过学号填写请假。</div><div class="panel pad leave-qr-card"><div id="leave-qrcode" aria-label="学生请假二维码"></div><strong>学生请假二维码</strong><p class="tiny muted">扫码后填写学号、请假类型和原因。二维码可长期使用。</p><div class="btn-row"><button class="btn secondary" data-action="copy-leave-link">复制链接</button><button class="btn ghost" data-action="open-leave-link">预览表单</button></div><div class="btn-row" style="margin-top:8px"><button class="btn ghost" data-action="leave-setup">更新名单</button><button class="btn" data-action="leave-refresh">刷新记录</button></div></div><div class="section-title"><h2>请假记录</h2><small>${rows.length} 条</small></div><div class="panel">${rows.length ? rows.map(row => `<article class="record"><div class="record-top"><strong>${esc(row.student_name)} · ${esc(row.leave_type)}</strong><span class="badge ${row.status === '已批准' ? 'green' : row.status === '已驳回' ? 'red' : row.status === '已返校' ? 'gray' : ''}">${esc(row.status)}</span></div><p>${esc(row.reason)}<br><span class="muted">开始：${esc(String(row.start_at || '').replace('T',' ').slice(0,16))}${row.return_at ? ` · 返校：${esc(String(row.return_at).replace('T',' ').slice(0,16))}` : ''}${row.course_info ? `<br>课程：${esc(row.course_info)}` : ''}${row.destination ? `<br>去向：${esc(row.destination)}` : ''}</span></p>${row.status === '待审批' ? `<div class="actions"><button class="btn small" data-action="leave-review" data-id="${esc(row.id)}" data-status="已批准">批准</button><button class="btn small danger" data-action="leave-review" data-id="${esc(row.id)}" data-status="已驳回">驳回</button></div>` : row.status === '已批准' && row.leave_type === '离校请假' ? `<div class="actions"><button class="btn small secondary" data-action="leave-review" data-id="${esc(row.id)}" data-status="已返校">确认已返校</button></div>` : ''}</article>`).join('') : empty('暂无请假记录，点击“刷新记录”获取学生提交的申请。')}</div>`;
+}
+function drawLeaveQr() {
+  const target = document.querySelector('#leave-qrcode');
+  if (!target || !window.qrcode) return;
+  target.innerHTML = '';
+  const qr = window.qrcode(0, 'M'); qr.addData(leaveLink()); qr.make();
+  target.innerHTML = qr.createImgTag(6, 8, '学生请假二维码');
 }
 function workRecordList(type, emptyTitle) {
   const query = clean(workSearch).toLowerCase(), records = state.records.filter(record => record.type === type && [studentName(record.studentId), state.students[record.studentId]?.className, record.date, record.summary, record.subject].some(value => clean(value).toLowerCase().includes(query))).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
@@ -230,7 +286,9 @@ function workDetailView() {
   if (!module) { workModule = ''; return workView(); }
   const [, title] = module;
   let body = '';
-  if (workModule === 'grades') {
+  if (workModule === 'leave') {
+    body = leaveManagementView();
+  } else if (workModule === 'grades') {
     const query = clean(workSearch).toLowerCase(), threshold = Number(state.settings.threshold || 1), warnings = selectedTerm ? Object.values(state.students).map(s => ({ s, count: gradeStats(state,s.id,selectedTerm).semester })).filter(item => item.count >= threshold && [studentName(item.s.id), item.s.className, item.s.major].some(value => clean(value).toLowerCase().includes(query))).sort((a,b) => b.count - a.count) : [];
     body = `<div class="notice">本学期挂科达到 <strong>${threshold} 门</strong>时提醒。</div><div class="section-title"><h2>学业预警</h2><select id="term-select" class="mini-select"><option value="">选择学期</option>${terms(state).map(term => `<option value="${esc(term)}" ${term === selectedTerm ? 'selected' : ''}>${esc(term)}</option>`).join('')}</select></div><div class="panel list">${warnings.length ? warnings.map(({s,count}) => `<button class="list-row" data-student="${esc(s.id)}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(studentName(s.id))}</strong><small>${esc(s.className)} · 历史累计 ${gradeStats(state,s.id,selectedTerm).cumulative} 门</small></div><span class="badge red">${count} 门</span></button>`).join('') : empty('暂无学业预警')}</div>`;
   } else if (workModule === 'funding') {
@@ -243,7 +301,8 @@ function workDetailView() {
   else if (workModule === 'mental') body = workRecordList('心理工作', '暂无心理工作记录');
   else body = workRecordList('家校联系', '暂无家校联系记录');
   const action = workModule === 'grades' ? 'work-add-grade' : workModule === 'funding' ? 'work-add-funding' : 'work-add-record';
-  return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2>${workModule === 'dorm' ? `<button class="btn small" data-action="dorm-map">分布图</button>` : `<button class="btn small" data-action="${action}" data-type="${esc(title)}">＋ 新增</button>`}</div>${workModule === 'dorm' ? '' : `<div class="search-wrap"><input class="search" id="work-search" type="search" placeholder="搜索学生、班级、日期或内容" value="${esc(workSearch)}"></div>`}${body}`;
+  const tool = workModule === 'leave' ? '' : workModule === 'dorm' ? `<button class="btn small" data-action="dorm-map">分布图</button>` : `<button class="btn small" data-action="${action}" data-type="${esc(title)}">＋ 新增</button>`;
+  return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2>${tool}</div>${['dorm','leave'].includes(workModule) ? '' : `<div class="search-wrap"><input class="search" id="work-search" type="search" placeholder="搜索学生、班级、日期或内容" value="${esc(workSearch)}"></div>`}${body}`;
 }
 function dataView() {
   const current = releases[0], user = account();
@@ -260,6 +319,7 @@ function render() {
   if (!state) return;
   const body = view === 'home' ? homeView() : view === 'students' ? studentsView() : view === 'work' ? workView() : view === 'alerts' ? alertsView() : dataView();
   shell(body);
+  if (view === 'work' && workModule === 'leave') drawLeaveQr();
   if (view === 'data') { const user = account(); document.querySelector('.content').insertAdjacentHTML('afterbegin', `<div class="section-title"><h2>云端同步</h2></div><div class="panel"><div class="file-card"><h3>${esc(cloudSyncStatus)}</h3><p>最近同步：${cloudSyncAt ? esc(cloudSyncAt.replace('T',' ').slice(0,16)) : '尚未同步'}</p><button class="btn secondary" data-action="sync-cloud" ${cloudSyncStatus === '同步中…' ? 'disabled' : ''}>${user ? '同步当前资料' : '登录并同步'}</button></div></div>`); }
   if (view === 'data' && localMigrationAvailable) document.querySelector('.content').insertAdjacentHTML('afterbegin', '<div class="section-title"><h2>迁移原本机资料</h2></div><div class="panel"><div class="file-card"><h3>原 6 位密码保护的资料</h3><p>将这台设备已有学生资料同步到当前账号；照片和截图继续保存在本机。</p><button class="btn ghost" data-action="migrate-local">开始迁移</button></div></div>');
   const searchInput = document.querySelector('#student-search');
@@ -402,7 +462,13 @@ app.addEventListener('click', async event => {
       case 'lock': signOut(); cloudSyncStatus = '已退出云端账号，本机资料仍可使用'; render(); notify('已退出云端账号'); break;
       case 'back-students': selectedId = ''; render(); break;
       case 'back-work': workModule = ''; render(); break;
+      case 'open-leave': view = 'work'; workModule = 'leave'; render(); break;
       case 'work-module': workModule = button.dataset.module; render(); window.scrollTo(0, 0); break;
+      case 'leave-setup': await configureLeaveForm(); break;
+      case 'leave-refresh': await refreshLeaveRequests(); break;
+      case 'leave-review': await updateLeaveRequest(button.dataset.id, button.dataset.status); break;
+      case 'copy-leave-link': { const link = leaveLink(); if (!navigator.clipboard) throw new Error('当前浏览器不支持自动复制，请使用“预览表单”后复制地址。'); await navigator.clipboard.writeText(link); notify('学生请假链接已复制'); break; }
+      case 'open-leave-link': window.open(leaveLink(), '_blank', 'noopener'); break;
       case 'dorm-map': dormMapForm(); break;
       case 'todo-filter': todoFilter = button.dataset.filter; render(); break;
       case 'add-todo': todoForm(); break;

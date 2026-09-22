@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#142a31">
+  <meta name="description" content="学生请假申请">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <title>学生请假申请</title>
+</head>
+<body class="leave-page">
+  <main class="leave-shell">
+    <div class="leave-mark">假</div>
+    <h1>学生请假申请</h1>
+    <p class="leave-intro">填写学号后会自动核对姓名，请如实填写请假信息。</p>
+    <form id="leave-form" class="leave-form" novalidate>
+      <div class="field"><label for="student-id">学号 *</label><input id="student-id" name="studentId" inputmode="numeric" autocomplete="off" required placeholder="请输入学号"></div>
+      <div class="field"><label for="student-name">姓名</label><input id="student-name" name="studentName" readonly placeholder="填写学号后自动显示"></div>
+      <div class="field"><label for="leave-type">请假类型 *</label><select id="leave-type" name="leaveType"><option value="上课请假">上课请假</option><option value="离校请假">离校请假</option></select></div>
+      <div class="field"><label for="start-at">开始时间 *</label><input id="start-at" name="startAt" type="datetime-local" required></div>
+      <div class="field leave-course"><label for="course-info">课程信息</label><input id="course-info" name="courseInfo" placeholder="课程名称、任课教师或上课时间"></div>
+      <div class="leave-offcampus" hidden>
+        <div class="field"><label for="return-at">预计返校时间 *</label><input id="return-at" name="returnAt" type="datetime-local"></div>
+        <div class="field"><label for="destination">去向</label><input id="destination" name="destination" placeholder="例如：回家、医院、校外实习地"></div>
+      </div>
+      <div class="field"><label for="reason">请假原因 *</label><textarea id="reason" name="reason" required maxlength="500" placeholder="请简要说明原因"></textarea></div>
+      <p id="form-message" class="leave-message" aria-live="polite"></p>
+      <button id="submit-leave" class="btn" type="submit">提交请假申请</button>
+    </form>
+    <p class="leave-foot">提交后请等待辅导员审批。</p>
+  </main>
+  <script type="module" src="leave.js"></script>
+</body>
+</html>
