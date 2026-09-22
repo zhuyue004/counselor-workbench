@@ -7,7 +7,7 @@ const app = document.querySelector('#app');
 const modalRoot = document.querySelector('#modal-root');
 const toastEl = document.querySelector('#toast');
 const inputs = { xlsx: document.querySelector('#xlsx-input'), photozip: document.querySelector('#photozip-input'), package: document.querySelector('#package-input') };
-let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', photoUrl = '', toastTimer;
+let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer;
 const today = () => new Date().toISOString().slice(0, 10);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 const fmtDate = value => clean(value) ? esc(clean(value).slice(0, 10)) : '—';
@@ -27,9 +27,11 @@ const flatIcon = name => ({
   grades: '<svg viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><path d="m7 16 4-4 3 2 5-6"/></svg>',
   funding: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M15 9.5c-.5-.8-1.5-1.3-3-1.3-1.7 0-2.8.8-2.8 2 0 3.3 5.7 1.5 5.7 4.4 0 1.2-1.1 2-2.9 2-1.4 0-2.5-.5-3.1-1.3M12 6.5v11"/></svg>',
   mental: '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a3.7 3.7 0 0 1 6.6-2.3L12 8.3l.4-.6A3.7 3.7 0 0 1 19 10c0 5.6-7 10-7 10Z"/></svg>',
-  contact: '<svg viewBox="0 0 24 24"><path d="M6 4h3l1.5 4-2 1.4c1.1 2.3 2.9 4.1 5.2 5.2l1.4-2L19 14v3c0 1.1-.9 2-2 2C10.4 19 5 13.6 5 7c0-1.1.9-2 1-3Z"/></svg>'
+  contact: '<svg viewBox="0 0 24 24"><path d="M6 4h3l1.5 4-2 1.4c1.1 2.3 2.9 4.1 5.2 5.2l1.4-2L19 14v3c0 1.1-.9 2-2 2C10.4 19 5 13.6 5 7c0-1.1.9-2 1-3Z"/></svg>',
+  dorm: '<svg viewBox="0 0 24 24"><path d="M4 21V4h16v17M8 8h2M14 8h2M8 12h2M14 12h2M10 21v-5h4v5"/></svg>'
 }[name] || '');
 const releases = [
+  { version: '1.0.14', updatedAt: '2026-09-22 09:00', notes: ['本人电话、家长电话和身份证号支持独立显示或隐藏。', '工作模块新增按宿舍聚合的宿舍分布。'] },
   { version: '1.0.13', updatedAt: '2026-09-21 17:22', notes: ['待办模块支持直接新增待办，并显示今日和逾期数量。'] },
   { version: '1.0.12', updatedAt: '2026-09-21 17:18', notes: ['学生模块新增班级切换，可只查看指定班级学生。'] },
   { version: '1.0.11', updatedAt: '2026-09-21 17:15', notes: ['学生列表按班级分组、组内学号排序，并新增班级职务。'] },
@@ -117,18 +119,21 @@ function studentsView() {
 function classFilterForm() { const classes = [...new Set(Object.values(state.students).map(s => s.className || '未分班'))].sort((a,b) => a.localeCompare(b,'zh-CN')); showModal('切换班级', choose('班级','className',['全部班级', ...classes], classFilter || '全部班级'), '确定', async form => { classFilter = form.get('className') === '全部班级' ? '' : clean(form.get('className')); search = ''; render(); }); }
 const dialNumber = value => clean(value).replace(/[^\d+]/g, '');
 const profileMissing = student => ['姓名','班级','专业','宿舍','本人电话','家长电话','家庭住址','身份证号','证件照'].filter(label => ({ 姓名: student.name, 班级: student.className, 专业: student.major, 宿舍: student.dorm, 本人电话: student.phone, 家长电话: student.parentPhone, 家庭住址: student.address, 身份证号: student.idNumber, 证件照: student.photoId })[label] ? false : true);
-function infoItem(label, value) {
-  const phone = ['本人电话', '家长电话'].includes(label) && dialNumber(value);
-  const content = phone ? `<a class="phone-link" href="tel:${esc(phone)}">${esc(value)}</a>` : esc(value || '—');
-  return `<div class="info-item"><small>${esc(label)}</small><strong>${content}</strong></div>`;
+const maskPhone = value => value ? `${value.slice(0,3)}****${value.slice(-4)}` : '—';
+const maskAddress = value => value ? `${value.slice(0, Math.min(6, value.length))}****` : '—';
+function infoItem(label, value, sensitiveKey = '') {
+  const visible = !sensitiveKey || sensitiveVisible[sensitiveKey], phone = ['phone', 'parentPhone'].includes(sensitiveKey) && dialNumber(value);
+  const masked = sensitiveKey === 'idNumber' ? maskId(value) : sensitiveKey === 'address' ? maskAddress(value) : maskPhone(value);
+  const content = visible && phone ? `<a class="phone-link" href="tel:${esc(phone)}">${esc(value)}</a>` : esc(visible ? value || '—' : masked);
+  return `<div class="info-item"><small>${esc(label)}</small><strong>${content}</strong>${sensitiveKey ? `<button class="btn small ghost" data-action="toggle-sensitive" data-key="${sensitiveKey}" style="margin-top:7px">${visible ? '隐藏' : '显示'}</button>` : ''}</div>`;
 }
 function detailView() {
   const s = student(); const grades = state.grades.filter(g => g.studentId === s.id), funding = state.funding.filter(f => f.studentId === s.id), records = state.records.filter(r => r.studentId === s.id).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
   const tabs = [['info','信息'],['grades','成绩'],['funding','资助'],['records','记录']];
   let body = '';
   if (detailTab === 'info') {
-    const fields = [['学号',s.id],['姓名',s.name],['班级',s.className],['班级职务',s.classRole],['专业',s.major],['宿舍',s.dorm],['本人电话',s.phone],['家长电话',s.parentPhone],['家庭住址',s.address],['性别',s.gender],['民族',s.ethnicity],['出生日期',s.birthDate]];
-    body = `<div class="contact-actions">${s.phone ? `<a href="tel:${esc(dialNumber(s.phone))}">☎ 本人电话</a>` : ''}${s.parentPhone ? `<a href="tel:${esc(dialNumber(s.parentPhone))}">☎ 家长电话</a>` : ''}</div><div class="panel pad"><div class="info-grid">${fields.map(([label,value]) => infoItem(label,value)).join('')}<div class="info-item"><small>身份证号</small><strong id="id-number">${maskId(s.idNumber)}</strong><button class="btn small ghost" data-action="toggle-id" style="margin-top:7px">显示 / 隐藏</button></div>${Object.entries(s.custom || {}).map(([k,v]) => infoItem(k,v)).join('')}</div></div><div class="btn-row" style="margin-top:12px"><button class="btn secondary" data-action="edit-student">编辑档案</button><button class="btn ghost" data-action="photo">上传证件照</button></div>`;
+    const fields = [['学号',s.id],['姓名',s.name],['班级',s.className],['班级职务',s.classRole],['专业',s.major],['宿舍',s.dorm],['本人电话',s.phone,'phone'],['家长电话',s.parentPhone,'parentPhone'],['家庭住址',s.address,'address'],['性别',s.gender],['民族',s.ethnicity],['出生日期',s.birthDate]];
+    body = `<div class="contact-actions">${sensitiveVisible.phone && s.phone ? `<a href="tel:${esc(dialNumber(s.phone))}">☎ 本人电话</a>` : ''}${sensitiveVisible.parentPhone && s.parentPhone ? `<a href="tel:${esc(dialNumber(s.parentPhone))}">☎ 家长电话</a>` : ''}</div><div class="panel pad"><div class="info-grid">${fields.map(([label,value,key]) => infoItem(label,value,key)).join('')}${infoItem('身份证号',s.idNumber,'idNumber')}${Object.entries(s.custom || {}).map(([k,v]) => infoItem(k,v)).join('')}</div></div><div class="btn-row" style="margin-top:12px"><button class="btn secondary" data-action="edit-student">编辑档案</button><button class="btn ghost" data-action="photo">上传证件照</button></div>`;
   } else if (detailTab === 'grades') {
     const stats = gradeStats(state,s.id,selectedTerm);
     body = `<div class="stats"><div class="stat warn"><strong>${stats.semester}</strong><span>本学期挂科</span></div><div class="stat"><strong>${stats.cumulative}</strong><span>历史累计</span></div><div class="stat"><strong>${stats.resolved}</strong><span>后来已通过</span></div></div><div class="section-title"><h2>成绩记录</h2><button class="btn small" data-action="add-grade">＋ 添加</button></div><div class="panel">${grades.length ? grades.sort((a,b) => b.term.localeCompare(a.term)).map(g => `<div class="record"><div class="record-top"><strong>${esc(courseLabel(g))}</strong><span class="badge ${isFailed(g) ? 'red' : 'green'}">${isFailed(g) ? '曾挂科' : '及格'}</span></div><p>${esc(g.term)} · 成绩 ${esc(g.score || '—')} ${g.retakeStatus ? `· ${esc(g.retakeStatus)}` : ''}</p><div class="actions"><button class="btn small ghost" data-action="edit-grade" data-id="${esc(g.id)}">编辑</button></div></div>`).join('') : empty('暂无成绩', '可手工添加或导入 Excel。')}</div>`;
@@ -151,11 +156,11 @@ function alertsView() {
 }
 
 const workModules = [
-  ['organization', '组织发展'], ['grades', '学业成绩'], ['funding', '资助工作'], ['mental', '心理工作'], ['contact', '家校联系']
+  ['organization', '组织发展'], ['grades', '学业成绩'], ['funding', '资助工作'], ['mental', '心理工作'], ['contact', '家校联系'], ['dorm', '宿舍分布']
 ];
 function workView() {
   if (workModule) return workDetailView();
-  const counts = { organization: state.records.filter(r => r.type === '组织发展').length, grades: state.grades.length, funding: state.funding.length, mental: state.records.filter(r => r.type === '心理工作').length, contact: state.records.filter(r => r.type === '家校联系').length };
+  const counts = { organization: state.records.filter(r => r.type === '组织发展').length, grades: state.grades.length, funding: state.funding.length, mental: state.records.filter(r => r.type === '心理工作').length, contact: state.records.filter(r => r.type === '家校联系').length, dorm: new Set(Object.values(state.students).map(s => s.dorm).filter(Boolean)).size };
   return `<div class="toolbar"><h2>工作</h2></div><div class="panel work-list">${workModules.map(([key, label]) => `<button class="work-card" data-action="work-module" data-module="${key}"><span>${flatIcon(key)}</span><strong>${label}</strong><small>${counts[key]} 条</small><i>›</i></button>`).join('')}</div>`;
 }
 function workRecordList(type, emptyTitle) {
@@ -173,11 +178,14 @@ function workDetailView() {
   } else if (workModule === 'funding') {
     const query = clean(workSearch).toLowerCase(), rows = state.funding.filter(item => [studentName(item.studentId), state.students[item.studentId]?.className, item.paidAt, item.program].some(value => clean(value).toLowerCase().includes(query))).sort((a,b) => (b.paidAt || '').localeCompare(a.paidAt || ''));
     body = `<div class="panel list">${rows.length ? rows.map(item => `<button class="list-row" data-student="${esc(item.studentId)}"><div class="avatar">¥</div><div class="row-main"><strong>${esc(studentName(item.studentId))} · ${esc(item.program || '资助项目')}</strong><small>${fmtDate(item.paidAt)} · ¥ ${esc(item.amount || '0')}</small></div><span class="chevron">›</span></button>`).join('') : empty('暂无资助记录')}</div>`;
+  } else if (workModule === 'dorm') {
+    const groups = Object.values(state.students).filter(s => clean(s.dorm)).reduce((result, s) => { (result[s.dorm] ||= []).push(s); return result; }, {});
+    body = `<div class="dorm-note">按宿舍聚合；每张卡显示同住学生，便于核对和联络。</div><div class="dorm-grid">${Object.entries(groups).sort(([a],[b]) => a.localeCompare(b,'zh-CN')).map(([dorm, students]) => `<section class="dorm-card"><div><strong>${esc(dorm)}</strong><small>${students.length} 人</small></div><p>${students.sort((a,b) => clean(a.id).localeCompare(clean(b.id),'zh-CN')).map(s => `<button data-student="${esc(s.id)}">${esc(studentName(s.id))}</button>`).join('')}</p></section>`).join('') || empty('暂无宿舍信息')}</div>`;
   } else if (workModule === 'organization') body = workRecordList('组织发展', '暂无组织发展记录');
   else if (workModule === 'mental') body = workRecordList('心理工作', '暂无心理工作记录');
   else body = workRecordList('家校联系', '暂无家校联系记录');
   const action = workModule === 'grades' ? 'work-add-grade' : workModule === 'funding' ? 'work-add-funding' : 'work-add-record';
-  return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2><button class="btn small" data-action="${action}" data-type="${esc(title)}">＋ 新增</button></div><div class="search-wrap"><input class="search" id="work-search" type="search" placeholder="搜索学生、班级、日期或内容" value="${esc(workSearch)}"></div>${body}`;
+  return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2>${workModule === 'dorm' ? '' : `<button class="btn small" data-action="${action}" data-type="${esc(title)}">＋ 新增</button>`}</div>${workModule === 'dorm' ? '' : `<div class="search-wrap"><input class="search" id="work-search" type="search" placeholder="搜索学生、班级、日期或内容" value="${esc(workSearch)}"></div>`}${body}`;
 }
 function dataView() {
   const current = releases[0];
@@ -329,6 +337,7 @@ app.addEventListener('click', async event => {
       case 'threshold': thresholdForm(); break;
       case 'change-passcode': passcodeForm(); break;
       case 'version-history': versionHistory(); break;
+      case 'toggle-sensitive': sensitiveVisible[button.dataset.key] = !sensitiveVisible[button.dataset.key]; render(); break;
       case 'toggle-id': { const el = document.querySelector('#id-number'); el.textContent = el.textContent.includes('*') ? student().idNumber || '—' : (student().idNumber ? `${student().idNumber.slice(0,4)}**********${student().idNumber.slice(-4)}` : '—'); break; }
       case 'toggle-done': { const record = state.records.find(r => r.id === button.dataset.id); if (record) { record.done = !record.done; record.updatedAt = now(); await persist(); } break; }
       case 'open-file': { const file = await getFile(button.dataset.id); if (!file) throw new Error('附件不存在'); const url = URL.createObjectURL(file.blob); modalRoot.innerHTML = `<div class="modal-shade"><div class="modal"><div class="modal-head"><h2>${esc(file.name)}</h2><button class="close" data-close>×</button></div><img class="photo-preview" src="${url}" alt="截图"><div class="modal-actions"><button class="btn ghost" data-close>关闭</button><a class="btn" href="${url}" download="${esc(file.name)}" style="text-align:center;text-decoration:none">保存图片</a></div></div></div>`; modalRoot.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { closeModal(); URL.revokeObjectURL(url); })); break; }
