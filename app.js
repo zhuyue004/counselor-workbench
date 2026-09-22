@@ -8,7 +8,7 @@ const app = document.querySelector('#app');
 const modalRoot = document.querySelector('#modal-root');
 const toastEl = document.querySelector('#toast');
 const inputs = { xlsx: document.querySelector('#xlsx-input'), photozip: document.querySelector('#photozip-input'), package: document.querySelector('#package-input') };
-let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer, localMigrationAvailable = false;
+let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer, localMigrationAvailable = false, cloudSyncStatus = '未同步', cloudSyncAt = '';
 const today = () => new Date().toISOString().slice(0, 10);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 const fmtDate = value => clean(value) ? esc(clean(value).slice(0, 10)) : '—';
@@ -83,12 +83,13 @@ function closeModal() { modalRoot.innerHTML = ''; }
 const field = (label, name, value = '', type = 'text', extra = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><input id="f-${esc(name)}" name="${esc(name)}" type="${type}" value="${esc(value)}" ${extra}></div>`;
 const area = (label, name, value = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><textarea id="f-${esc(name)}" name="${esc(name)}">${esc(value)}</textarea></div>`;
 const choose = (label, name, options, current = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><select id="f-${esc(name)}" name="${esc(name)}">${options.map(option => `<option value="${esc(option)}" ${option === current ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div>`;
-async function persist() { await saveCloudState(state); render(); }
+async function persist() { cloudSyncStatus = '同步中…'; try { await saveCloudState(state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); } catch (error) { cloudSyncStatus = '同步失败'; throw error; } render(); }
+async function syncCloudNow() { cloudSyncStatus = '同步中…'; render(); try { await saveCloudState(state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); notify('已同步到云端'); } catch (error) { cloudSyncStatus = '同步失败'; notify(error.message || '同步失败，请检查网络后重试', true); } render(); }
 function setView(next) { view = next; if (next !== 'work') workModule = ''; render(); window.scrollTo(0, 0); }
 
 async function gate(mode = 'signin') {
   const saved = await restoreAccount();
-  if (saved) { localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadCloudState(emptyState); selectedTerm = terms(state)[0] || ''; render(); return; }
+  if (saved) { localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadCloudState(emptyState); cloudSyncStatus = '已同步'; cloudSyncAt = now(); selectedTerm = terms(state)[0] || ''; render(); return; }
   const creating = mode === 'register';
   app.innerHTML = `<div class="lock-page"><div class="lock-card"><div class="lock-mark">档</div><h1>${creating ? '创建账号' : '欢迎回来'}</h1><p>${creating ? '使用邮箱创建个人工作台。学生资料只会同步到你的账号。' : '使用邮箱登录，查看属于你的学生资料。'}</p><form id="gate-form">${field('邮箱','email','','email','required autocomplete="email" inputmode="email"')}${field('密码','password','','password','required minlength="6" autocomplete="current-password"')}${creating ? field('确认密码','confirm','','password','required minlength="6" autocomplete="new-password"') : ''}<button class="btn" type="submit">${creating ? '创建并进入' : '登录'}</button></form><div class="gate-links">${creating ? '<button type="button" id="show-signin">已有账号，去登录</button>' : '<button type="button" id="show-register">创建新账号</button><button type="button" id="reset-password">忘记密码</button>'}</div><div class="lock-foot">附件仅保存在当前设备，不会上传云端。</div></div></div>`;
   app.querySelector('#show-signin')?.addEventListener('click', () => gate('signin'));
@@ -99,7 +100,7 @@ async function gate(mode = 'signin') {
     try {
       if (creating) { if (password !== String(form.get('confirm'))) throw new Error('两次输入的密码不一致'); await register(email, password); }
       else await signIn(email, password);
-      localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadCloudState(emptyState); selectedTerm = terms(state)[0] || ''; render();
+      localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadCloudState(emptyState); cloudSyncStatus = '已同步'; cloudSyncAt = now(); selectedTerm = terms(state)[0] || ''; render();
     } catch (error) { notify(error.message || String(error), true); }
   });
 }
@@ -236,6 +237,7 @@ function render() {
   if (!state) return gate();
   const body = view === 'home' ? homeView() : view === 'students' ? studentsView() : view === 'work' ? workView() : view === 'alerts' ? alertsView() : dataView();
   shell(body);
+  if (view === 'data') document.querySelector('.content').insertAdjacentHTML('afterbegin', `<div class="section-title"><h2>云端同步</h2></div><div class="panel"><div class="file-card"><h3>${esc(cloudSyncStatus)}</h3><p>最近同步：${cloudSyncAt ? esc(cloudSyncAt.replace('T',' ').slice(0,16)) : '尚未同步'}</p><button class="btn secondary" data-action="sync-cloud" ${cloudSyncStatus === '同步中…' ? 'disabled' : ''}>立即同步</button></div></div>`);
   if (view === 'data' && localMigrationAvailable) document.querySelector('.content').insertAdjacentHTML('afterbegin', '<div class="section-title"><h2>迁移原本机资料</h2></div><div class="panel"><div class="file-card"><h3>原 6 位密码保护的资料</h3><p>将这台设备已有学生资料同步到当前账号；照片和截图继续保存在本机。</p><button class="btn ghost" data-action="migrate-local">开始迁移</button></div></div>');
   const searchInput = document.querySelector('#student-search');
   if (searchInput) {
@@ -395,6 +397,7 @@ app.addEventListener('click', async event => {
       case 'reset-password': resetPasswordForm(); break;
       case 'migrate-local': migrateLocalDataForm(); break;
       case 'sign-out': signOut(); state = undefined; selectedId = ''; gate(); break;
+      case 'sync-cloud': await syncCloudNow(); break;
       case 'version-history': versionHistory(); break;
       case 'toggle-sensitive': { const next = !Object.values(sensitiveVisible).every(Boolean); Object.keys(sensitiveVisible).forEach(key => sensitiveVisible[key] = next); render(); break; }
       case 'toggle-id': { const el = document.querySelector('#id-number'); el.textContent = el.textContent.includes('*') ? student().idNumber || '—' : (student().idNumber ? `${student().idNumber.slice(0,4)}**********${student().idNumber.slice(-4)}` : '—'); break; }
