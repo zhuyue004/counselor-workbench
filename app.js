@@ -236,6 +236,7 @@ function render() {
   if (!state) return gate();
   const body = view === 'home' ? homeView() : view === 'students' ? studentsView() : view === 'work' ? workView() : view === 'alerts' ? alertsView() : dataView();
   shell(body);
+  if (view === 'data' && localMigrationAvailable) document.querySelector('.content').insertAdjacentHTML('afterbegin', '<div class="section-title"><h2>迁移原本机资料</h2></div><div class="panel"><div class="file-card"><h3>原 6 位密码保护的资料</h3><p>将这台设备已有学生资料同步到当前账号；照片和截图继续保存在本机。</p><button class="btn ghost" data-action="migrate-local">开始迁移</button></div></div>');
   const searchInput = document.querySelector('#student-search');
   if (searchInput) {
     const filterStudents = value => {
