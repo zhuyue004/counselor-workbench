@@ -1,4 +1,4 @@
-const CACHE = 'counselor-workbench-v1-20260922-leave';
+const CACHE = 'counselor-workbench-v1-20260922-leave-search';
 const ASSETS = ['./', './index.html', './leave.html', './leave.js', './styles.css', './app.js', './data.js', './cloudbase.js', './xlsx.js', './transfer.js', './vendor/fflate.js', './vendor/qrcode.js', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
