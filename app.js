@@ -1,13 +1,14 @@
-import { APP_VERSION, uid, now, clean, dateFromId, gradeStats, terms, isFailed, emptyState, hasSecurity, usesLegacySecurity, setupSecurity, unlockSecurity, changeSecurity, lockSecurity, loadState, saveState, putFile, getFile, allFiles, putFiles, previewWorkbook, exportSheets } from './data.js';
+import { APP_VERSION, uid, now, clean, dateFromId, gradeStats, terms, isFailed, emptyState, hasSecurity, unlockSecurity, loadState, openLocalFiles, putFile, getFile, allFiles, putFiles, previewWorkbook, exportSheets } from './data.js';
 import { COLUMNS, blankTemplate, createWorkbook, readWorkbook } from './xlsx.js';
 import { makePackage, readPackage, mergePackage, packageName, stamp } from './transfer.js';
 import { unzipSync } from './vendor/fflate.js';
+import { account, restoreAccount, signIn, register, sendResetEmail, signOut, loadCloudState, saveCloudState } from './firebase.js';
 
 const app = document.querySelector('#app');
 const modalRoot = document.querySelector('#modal-root');
 const toastEl = document.querySelector('#toast');
 const inputs = { xlsx: document.querySelector('#xlsx-input'), photozip: document.querySelector('#photozip-input'), package: document.querySelector('#package-input') };
-let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer;
+let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer, localMigrationAvailable = false;
 const today = () => new Date().toISOString().slice(0, 10);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 const fmtDate = value => clean(value) ? esc(clean(value).slice(0, 10)) : '—';
@@ -31,6 +32,7 @@ const flatIcon = name => ({
   dorm: '<svg viewBox="0 0 24 24"><path d="M4 21V4h16v17M8 8h2M14 8h2M8 12h2M14 12h2M10 21v-5h4v5"/></svg>'
 }[name] || '');
 const releases = [
+  { version: '1.0.18', updatedAt: '2026-09-22 11:00', notes: ['新增邮箱账号登录、注册和邮件重置密码。', '学生资料按账号分别同步到云端；证件照和截图继续仅保存在本机。'] },
   { version: '1.0.17', updatedAt: '2026-09-22 10:15', notes: ['宿舍分布图与 Excel 改为横向房间号、纵向楼层，楼层从高到低排列。', '宿舍分布图左右滑动时，楼层列保持固定。'] },
   { version: '1.0.16', updatedAt: '2026-09-22 10:00', notes: ['学生详情中的敏感信息改为一键显示或隐藏。', '学生搜索会在输入时即时筛选并提示无匹配结果。'] },
   { version: '1.0.15', updatedAt: '2026-09-22 09:15', notes: ['宿舍分布支持按楼号、楼层、房间号生成分布图和 Excel。'] },
@@ -81,21 +83,24 @@ function closeModal() { modalRoot.innerHTML = ''; }
 const field = (label, name, value = '', type = 'text', extra = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><input id="f-${esc(name)}" name="${esc(name)}" type="${type}" value="${esc(value)}" ${extra}></div>`;
 const area = (label, name, value = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><textarea id="f-${esc(name)}" name="${esc(name)}">${esc(value)}</textarea></div>`;
 const choose = (label, name, options, current = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><select id="f-${esc(name)}" name="${esc(name)}">${options.map(option => `<option value="${esc(option)}" ${option === current ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div>`;
-async function persist() { await saveState(state); render(); }
+async function persist() { await saveCloudState(state); render(); }
 function setView(next) { view = next; if (next !== 'work') workModule = ''; render(); window.scrollTo(0, 0); }
 
-async function gate() {
-  const exists = await hasSecurity();
-  const legacy = exists && await usesLegacySecurity();
-  const passwordAttrs = legacy ? 'required autocomplete="current-password"' : 'required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="current-password"';
-  app.innerHTML = `<div class="lock-page"><div class="lock-card"><div class="lock-mark">档</div><h1>${exists ? '欢迎回来' : '建立你的工作台'}</h1><p>${exists ? (legacy ? '输入原解锁密码后，可在“数据”页面改为 6 位数字密码。' : '输入 6 位数字密码，查看保存在这台设备上的学生资料。') : '学生资料仅保存在这台设备中。请设置 6 位数字密码，并定期导出加密数据包备份。'}</p><form id="gate-form">${field(legacy ? '原解锁密码' : '6 位数字密码', 'password', '', 'password', passwordAttrs)}${exists ? '' : field('再次输入 6 位数字密码', 'confirm', '', 'password', 'required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="new-password"')}<button class="btn" type="submit">${exists ? '解锁' : '创建并进入'}</button></form><div class="lock-foot">忘记密码无法解密本机资料。请妥善保存密码和导出的加密备份包。</div></div></div>`;
+async function gate(mode = 'signin') {
+  const saved = await restoreAccount();
+  if (saved) { localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadCloudState(emptyState); selectedTerm = terms(state)[0] || ''; render(); return; }
+  const creating = mode === 'register';
+  app.innerHTML = `<div class="lock-page"><div class="lock-card"><div class="lock-mark">档</div><h1>${creating ? '创建账号' : '欢迎回来'}</h1><p>${creating ? '使用邮箱创建个人工作台。学生资料只会同步到你的账号。' : '使用邮箱登录，查看属于你的学生资料。'}</p><form id="gate-form">${field('邮箱','email','','email','required autocomplete="email" inputmode="email"')}${field('密码','password','','password','required minlength="6" autocomplete="current-password"')}${creating ? field('确认密码','confirm','','password','required minlength="6" autocomplete="new-password"') : ''}<button class="btn" type="submit">${creating ? '创建并进入' : '登录'}</button></form><div class="gate-links">${creating ? '<button type="button" id="show-signin">已有账号，去登录</button>' : '<button type="button" id="show-register">创建新账号</button><button type="button" id="reset-password">忘记密码</button>'}</div><div class="lock-foot">附件仅保存在当前设备，不会上传云端。</div></div></div>`;
+  app.querySelector('#show-signin')?.addEventListener('click', () => gate('signin'));
+  app.querySelector('#show-register')?.addEventListener('click', () => gate('register'));
+  app.querySelector('#reset-password')?.addEventListener('click', () => resetPasswordForm());
   app.querySelector('#gate-form').addEventListener('submit', async event => {
-    event.preventDefault(); const form = new FormData(event.currentTarget); const password = String(form.get('password'));
+    event.preventDefault(); const form = new FormData(event.currentTarget), email = clean(form.get('email')), password = String(form.get('password'));
     try {
-      if (exists) await unlockSecurity(password);
-      else { if (password !== form.get('confirm')) throw new Error('两次输入的密码不一致'); await setupSecurity(password); }
-      state = await loadState(); selectedTerm = terms(state)[0] || ''; render();
-    } catch (error) { notify(error.message, true); }
+      if (creating) { if (password !== String(form.get('confirm'))) throw new Error('两次输入的密码不一致'); await register(email, password); }
+      else await signIn(email, password);
+      localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadCloudState(emptyState); selectedTerm = terms(state)[0] || ''; render();
+    } catch (error) { notify(error.message || String(error), true); }
   });
 }
 
@@ -220,8 +225,8 @@ function workDetailView() {
   return `<button class="back" data-action="back-work">← 返回工作</button><div class="toolbar"><h2>${esc(title)}</h2>${workModule === 'dorm' ? `<button class="btn small" data-action="dorm-map">分布图</button>` : `<button class="btn small" data-action="${action}" data-type="${esc(title)}">＋ 新增</button>`}</div>${workModule === 'dorm' ? '' : `<div class="search-wrap"><input class="search" id="work-search" type="search" placeholder="搜索学生、班级、日期或内容" value="${esc(workSearch)}"></div>`}${body}`;
 }
 function dataView() {
-  const current = releases[0];
-  return `<div class="toolbar"><h2>设置</h2></div><div class="section-title"><h2>本机解锁</h2></div><div class="panel"><div class="file-card"><h3>6 位数字密码</h3><button class="btn ghost" data-action="change-passcode">修改解锁密码</button></div></div><div class="section-title"><h2>Excel 模板</h2></div><div class="panel"><div class="file-card"><h3>空白固定模板</h3><button class="btn secondary" data-action="template">下载空白模板</button></div><div class="file-card"><h3>导入 Excel</h3><button class="btn secondary" data-action="import-xlsx">选择 Excel 文件</button></div><div class="file-card"><h3>导出当前数据</h3><button class="btn secondary" data-action="export-xlsx">导出 Excel</button></div></div><div class="section-title"><h2>照片与传输</h2></div><div class="panel"><div class="file-card"><h3>证件照批量导入</h3><button class="btn ghost" data-action="import-photos">选择照片 ZIP</button></div><div class="file-card"><h3>导出加密数据包</h3><p>上次备份：${state.settings.lastExportedAt ? esc(state.settings.lastExportedAt.replace('T',' ').slice(0,16)) : '尚未备份'}</p><button class="btn" data-action="export-package">生成传输包 / 备份</button></div><div class="file-card"><h3>导入加密数据包</h3><button class="btn ghost" data-action="import-package">选择数据包 ZIP</button></div></div><div class="section-title"><h2>版本</h2></div><button class="version-card" data-action="version-history"><span><strong>v${esc(APP_VERSION)}</strong><small>更新于 ${esc(current.updatedAt)}</small></span><span class="chevron">›</span></button>`;
+  const current = releases[0], user = account();
+  return `<div class="toolbar"><h2>设置</h2></div><div class="section-title"><h2>账号</h2></div><div class="panel"><div class="file-card"><h3>${esc(user?.email || '未登录')}</h3><p>学生资料仅同步到此账号。</p><div class="btn-row"><button class="btn ghost" data-action="reset-password">重置密码</button><button class="btn secondary" data-action="sign-out">退出登录</button></div></div></div><div class="section-title"><h2>Excel 模板</h2></div><div class="panel"><div class="file-card"><h3>空白固定模板</h3><button class="btn secondary" data-action="template">下载空白模板</button></div><div class="file-card"><h3>导入 Excel</h3><button class="btn secondary" data-action="import-xlsx">选择 Excel 文件</button></div><div class="file-card"><h3>导出当前数据</h3><button class="btn secondary" data-action="export-xlsx">导出 Excel</button></div></div><div class="section-title"><h2>离线附件与备份</h2></div><div class="panel"><div class="file-card"><h3>证件照批量导入</h3><p>证件照和工作截图仅保存于这台设备。</p><button class="btn ghost" data-action="import-photos">选择照片 ZIP</button></div><div class="file-card"><h3>导出加密数据包</h3><p>上次备份：${state.settings.lastExportedAt ? esc(state.settings.lastExportedAt.replace('T',' ').slice(0,16)) : '尚未备份'}</p><button class="btn" data-action="export-package">生成传输包 / 备份</button></div><div class="file-card"><h3>导入加密数据包</h3><button class="btn ghost" data-action="import-package">选择数据包 ZIP</button></div></div><div class="section-title"><h2>版本</h2></div><button class="version-card" data-action="version-history"><span><strong>v${esc(APP_VERSION)}</strong><small>更新于 ${esc(current.updatedAt)}</small></span><span class="chevron">›</span></button>`;
 }
 
 function versionHistory() {
@@ -307,11 +312,11 @@ function photoForm() {
   });
 }
 function thresholdForm() { showModal('设置挂科预警', `${field('本学期挂科达到几门时提醒','threshold',state.settings.threshold,'number','required min="1" max="30"')}`, '保存规则', async form => { state.settings.threshold = Math.max(1, Math.min(30, Number(form.get('threshold')) || 1)); await persist(); notify('预警规则已更新'); }); }
-function passcodeForm() {
-  showModal('修改解锁密码', `${field('当前解锁密码','currentPassword','','password','required autocomplete="current-password"')}${field('新 6 位数字密码','nextPassword','','password','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="new-password"')}${field('再次输入新密码','confirmPassword','','password','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="new-password"')}`, '保存并重新加密', async form => {
-    const next = String(form.get('nextPassword')); if (next !== form.get('confirmPassword')) throw new Error('两次输入的新密码不一致');
-    await changeSecurity(String(form.get('currentPassword')), next); notify('解锁密码已改为 6 位数字');
-  });
+function resetPasswordForm() {
+  showModal('重置密码', `${field('账号邮箱','email',account()?.email || '','','email','required autocomplete="email"')}<p class="inline-note">系统将向该邮箱发送重置链接。打开链接并设置新密码后，再回到这里登录。</p>`, '发送重置邮件', async form => { await sendResetEmail(clean(form.get('email'))); notify('重置邮件已发送，请前往邮箱完成验证'); });
+}
+function migrateLocalDataForm() {
+  showModal('迁移本机资料', `${field('原 6 位本机密码','password','','password','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6"')}<p class="inline-note">会将原有学生资料同步到当前账号；照片和截图仍留在本机。</p>`, '开始迁移', async form => { await unlockSecurity(String(form.get('password'))); state = await loadState(); await persist(); localMigrationAvailable = false; notify('本机资料已同步到当前账号'); });
 }
 function passwordForm(title, text, onPassword) { showModal(title, `${text ? `<p class="notice">${esc(text)}</p>` : ''}${field('数据包密码','password','','password','required minlength="8" autocomplete="off"')}`, '继续', async form => onPassword(String(form.get('password')))); }
 
@@ -363,7 +368,7 @@ app.addEventListener('click', async event => {
   const button = event.target.closest('[data-action]'); if (!button) return;
   try {
     switch(button.dataset.action) {
-      case 'lock': lockSecurity(); state = undefined; selectedId = ''; gate(); break;
+      case 'lock': signOut(); state = undefined; selectedId = ''; gate(); break;
       case 'back-students': selectedId = ''; render(); break;
       case 'back-work': workModule = ''; render(); break;
       case 'work-module': workModule = button.dataset.module; render(); window.scrollTo(0, 0); break;
@@ -384,7 +389,9 @@ app.addEventListener('click', async event => {
       case 'edit-record': recordForm(state.records.find(r => r.id === button.dataset.id)); break;
       case 'photo': photoForm(); break;
       case 'threshold': thresholdForm(); break;
-      case 'change-passcode': passcodeForm(); break;
+      case 'reset-password': resetPasswordForm(); break;
+      case 'migrate-local': migrateLocalDataForm(); break;
+      case 'sign-out': signOut(); state = undefined; selectedId = ''; gate(); break;
       case 'version-history': versionHistory(); break;
       case 'toggle-sensitive': { const next = !Object.values(sensitiveVisible).every(Boolean); Object.keys(sensitiveVisible).forEach(key => sensitiveVisible[key] = next); render(); break; }
       case 'toggle-id': { const el = document.querySelector('#id-number'); el.textContent = el.textContent.includes('*') ? student().idNumber || '—' : (student().idNumber ? `${student().idNumber.slice(0,4)}**********${student().idNumber.slice(-4)}` : '—'); break; }
@@ -407,7 +414,7 @@ inputs.package.addEventListener('change', async event => { const file = event.ta
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) hiddenAt = Date.now();
-  else if (state && hiddenAt && Date.now() - hiddenAt > 5 * 60 * 1000) { lockSecurity(); state = undefined; selectedId = ''; closeModal(); gate(); }
+  else if (state && hiddenAt && Date.now() - hiddenAt > 5 * 60 * 1000) { signOut(); state = undefined; selectedId = ''; closeModal(); gate(); }
 });
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(() => {});
 gate().catch(error => { app.innerHTML = `<div class="empty"><strong>应用无法启动</strong><p>${esc(error.message)}</p></div>`; });
