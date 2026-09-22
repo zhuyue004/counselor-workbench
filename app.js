@@ -149,7 +149,7 @@ function studentsView() {
   if (selectedId && student()) return detailView();
   const query = search.toLowerCase(), classes = [...new Set(Object.values(state.students).map(s => s.className || '未分班'))].sort((a,b) => a.localeCompare(b,'zh-CN')), filtered = Object.values(state.students).filter(s => (!classFilter || (s.className || '未分班') === classFilter) && [s.id,s.name,s.className,s.classRole,s.major,s.dorm].some(v => clean(v).toLowerCase().includes(query))).sort((a,b) => clean(a.className).localeCompare(clean(b.className),'zh-CN') || clean(a.id).localeCompare(clean(b.id),'zh-CN'));
   const groups = filtered.reduce((result, s) => { const key = s.className || '未分班'; (result[key] ||= []).push(s); return result; }, {});
-  return `<div class="toolbar"><h2>学生 <span id="student-count" class="muted tiny">${filtered.length}</span></h2><div class="toolbar-actions"><button class="btn small ghost" data-action="class-filter">${esc(classFilter || '全部班级')}</button><button class="btn small" data-action="add-student">＋ 新增</button></div></div><div class="search-wrap"><input class="search" id="student-search" type="search" placeholder="搜索姓名、学号、班级、职务、专业" value="${esc(search)}"></div><div id="student-search-empty" class="search-empty" hidden>没有匹配的学生</div>${filtered.length ? Object.entries(groups).map(([group, rows]) => `<section class="student-group"><h3>${esc(group)} <small>${rows.length}</small></h3><div class="panel list">${rows.map(s => `<button class="list-row student-row" data-student="${esc(s.id)}" data-search="${esc([s.id,s.name,s.className,s.classRole,s.major,s.dorm].map(clean).join(' ').toLowerCase())}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.className || '未分班')} · ${esc(s.id)}</small></div>${s.classRole ? `<span class="role-tag">${esc(s.classRole)}</span>` : ''}<span class="chevron">›</span></button>`).join('')}</div></section>`).join('') : `<div class="panel">${empty(search ? '没有匹配的学生' : '还没有学生档案')}</div>`}`;
+  return `<div class="toolbar"><h2>学生 <span id="student-count" class="muted tiny">${filtered.length}</span></h2><div class="toolbar-actions"><button class="btn small ghost" data-action="class-filter">${esc(classFilter || '全部班级')}</button><button class="btn small" data-action="add-student">＋ 新增</button></div></div><div class="search-wrap"><input class="search" id="student-search" type="search" placeholder="输入后即时搜索姓名、学号、班级、专业" value="${esc(search)}" autocomplete="off"></div><div id="student-search-status" class="tiny muted" aria-live="polite">${search ? `找到 ${filtered.length} 名学生` : ''}</div><div id="student-search-empty" class="search-empty" hidden>没有匹配的学生</div>${filtered.length ? Object.entries(groups).map(([group, rows]) => `<section class="student-group"><h3>${esc(group)} <small>${rows.length}</small></h3><div class="panel list">${rows.map(s => `<button class="list-row student-row" data-student="${esc(s.id)}" data-search="${esc([s.id,s.name,s.className,s.classRole,s.major,s.dorm].map(clean).join(' ').toLowerCase())}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.className || '未分班')} · ${esc(s.id)}</small></div>${s.classRole ? `<span class="role-tag">${esc(s.classRole)}</span>` : ''}<span class="chevron">›</span></button>`).join('')}</div></section>`).join('') : `<div class="panel">${empty(search ? '没有匹配的学生' : '还没有学生档案')}</div>`}`;
 }
 function classFilterForm() { const classes = [...new Set(Object.values(state.students).map(s => s.className || '未分班'))].sort((a,b) => a.localeCompare(b,'zh-CN')); showModal('切换班级', choose('班级','className',['全部班级', ...classes], classFilter || '全部班级'), '确定', async form => { classFilter = form.get('className') === '全部班级' ? '' : clean(form.get('className')); search = ''; render(); }); }
 const dialNumber = value => clean(value).replace(/[^\d+]/g, '');
@@ -192,7 +192,7 @@ function alertsView() {
 }
 
 const workModules = [
-  ['leave', '请假管理'], ['organization', '组织发展'], ['grades', '学业成绩'], ['funding', '资助工作'], ['mental', '心理工作'], ['contact', '家校联系'], ['dorm', '宿舍分布']
+  ['leave', '请假管理'], ['organization', '组织发展'], ['grades', '学业管理'], ['funding', '资助工作'], ['mental', '心理工作'], ['contact', '家校联系'], ['dorm', '宿舍管理']
 ];
 function workView() {
   if (workModule) return workDetailView();
@@ -334,8 +334,10 @@ function render() {
       const matches = rows.filter(row => !row.hidden);
       const count = document.querySelector('#student-count');
       const emptyHint = document.querySelector('#student-search-empty');
+      const status = document.querySelector('#student-search-status');
       if (count) count.textContent = matches.length;
       if (emptyHint) emptyHint.hidden = !query || matches.length > 0;
+      if (status) status.textContent = query ? `找到 ${matches.length} 名学生` : '';
     };
     searchInput.addEventListener('input', event => filterStudents(event.target.value));
     searchInput.addEventListener('compositionend', event => filterStudents(event.target.value));
