@@ -17,3 +17,20 @@ export function signOut() { session = undefined; localStorage.removeItem(session
 function requireSession() { if (!session || Date.now() >= session.expiresAt) { signOut(); throw new Error('登录已过期，请重新登录。'); } return session; }
 export async function loadCloudState(emptyState) { const user = requireSession(); const response = await fetch(`${gateway}/v1/rdb/rest/account_states?owner_id=eq.${encodeURIComponent(user.uid)}&select=payload`, { headers: { Authorization: `Bearer ${user.accessToken}` } }); const data = await response.json().catch(() => []); if (!response.ok) throw new Error(readable(data)); return data[0]?.payload || emptyState(); }
 export async function saveCloudState(state) { const user = requireSession(); await request('/v1/rdb/rest/account_states', { method: 'POST', token: user.accessToken, headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: { owner_id: user.uid, payload: state, updated_at: new Date().toISOString() } }); }
+async function leaveRequest(path, { method = 'GET', body, headers = {} } = {}) {
+  const user = requireSession();
+  const response = await fetch(`${gateway}/v1/rdb/rest${path}`, { method, headers: { Authorization: `Bearer ${user.accessToken}`, ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(readable(data));
+  return data;
+}
+export async function configureLeaveForm({ formToken, managerToken, roster }) {
+  const user = requireSession();
+  await leaveRequest('/leave_forms', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: { owner_id: user.uid, form_token: formToken, manager_token: managerToken, roster, updated_at: new Date().toISOString() } });
+}
+export async function loadLeaveRequests() { const user = requireSession(); return leaveRequest(`/leave_requests?owner_id=eq.${encodeURIComponent(user.uid)}&order=created_at.desc`); }
+export async function reviewLeaveRequest(id, status) {
+  const patch = { status };
+  if (status === '已返校') patch.returned_at = new Date().toISOString(); else patch.reviewed_at = new Date().toISOString();
+  await leaveRequest(`/leave_requests?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: patch });
+}

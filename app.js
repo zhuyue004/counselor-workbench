@@ -2,7 +2,7 @@ import { APP_VERSION, uid, now, clean, dateFromId, gradeStats, terms, isFailed, 
 import { COLUMNS, blankTemplate, createWorkbook, readWorkbook } from './xlsx.js';
 import { makePackage, readPackage, mergePackage, packageName, stamp } from './transfer.js';
 import { unzipSync } from './vendor/fflate.js';
-import { account, restoreAccount, signIn, register, sendRegistrationCode, sendResetCode, resetPassword, signOut, loadCloudState, saveCloudState } from './cloudbase.js';
+import { account, restoreAccount, signIn, register, sendRegistrationCode, sendResetCode, resetPassword, signOut, loadCloudState, saveCloudState, configureLeaveForm as saveLeaveForm, loadLeaveRequests, reviewLeaveRequest } from './cloudbase.js';
 
 const app = document.querySelector('#app');
 const modalRoot = document.querySelector('#modal-root');
@@ -10,7 +10,6 @@ const toastEl = document.querySelector('#toast');
 const inputs = { xlsx: document.querySelector('#xlsx-input'), photozip: document.querySelector('#photozip-input'), package: document.querySelector('#package-input') };
 let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer, localMigrationAvailable = false, cloudSyncStatus = '本机资料', cloudSyncAt = '', registrationDraft, resetDraft, localRevision = 0;
 const today = () => new Date().toISOString().slice(0, 10);
-const LEAVE_API = 'https://counselor-workbench-d5bo59891098-1493520377.ap-shanghai.app.tcloudbase.com/leave-api';
 const dirtyKey = accountId => `counselor-workbench-cloud-dirty:${accountId}`;
 const LOCAL_WORKSPACE_ID = 'local-workspace';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
@@ -36,6 +35,7 @@ const flatIcon = name => ({
   leave: '<svg viewBox="0 0 24 24"><path d="M7 3h10v18H7z"/><path d="M9 8h6M9 12h6M9 16h3"/><path d="m4 8 1.5 1.5L8 6"/></svg>'
 }[name] || '');
 const releases = [
+  { version: '1.0.27', updatedAt: '2026-09-22 17:10', notes: ['请假管理的启用、刷新和审批改用已登录的 CloudBase 数据通道，避免 HTTP 网关跨域导致的加载失败。'] },
   { version: '1.0.26', updatedAt: '2026-09-22 16:45', notes: ['工作模块名称调整为学业管理、宿舍管理。', '学生搜索输入后立即筛选，并实时显示匹配人数。', '修复学生请假二维码启用时的跨域提交问题。'] },
   { version: '1.0.25', updatedAt: '2026-09-22 16:20', notes: ['工作模块新增请假管理和通用学生请假二维码。', '学生按学号自动带出姓名后可提交上课或离校请假；首页显示已批准离校请假的返校提醒。'] },
   { version: '1.0.24', updatedAt: '2026-09-22 14:30', notes: ['修复 CloudBase 注册和重置密码接口的鉴权方式，验证码请求不再携带不适用的客户端密钥。'] },
@@ -208,19 +208,12 @@ const leaveLink = () => {
   url.searchParams.set('form', token);
   return url.href;
 };
-async function leaveApi(path, options = {}) {
-  // text/plain keeps cross-origin form submissions "simple" so CloudBase's gateway does not need to handle a browser preflight request.
-  const response = await fetch(`${LEAVE_API}${path}`, { ...options, headers: { 'Content-Type': 'text/plain;charset=UTF-8', ...(options.headers || {}) } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || '请假服务暂不可用，请稍后重试。');
-  return data;
-}
 async function configureLeaveForm() {
   const user = account();
   if (!user) { gate('signin'); return; }
   if (!Object.keys(state.students).length) throw new Error('请先导入或新增学生档案，再生成请假二维码。');
   const current = state.settings.leave || { formToken: randomToken(), managerToken: randomToken() };
-  await leaveApi('/configure', { method: 'POST', body: JSON.stringify({ ownerId: user.uid, formToken: current.formToken, managerToken: current.managerToken, roster: Object.values(state.students).map(student => ({ id: student.id, name: student.name })) }) });
+  await saveLeaveForm({ formToken: current.formToken, managerToken: current.managerToken, roster: Object.values(state.students).map(student => ({ id: student.id, name: student.name })) });
   state.settings.leave = { ...current, configuredAt: now() };
   await persist();
   notify('请假二维码已更新，已同步学生名单');
@@ -228,14 +221,12 @@ async function configureLeaveForm() {
 async function refreshLeaveRequests() {
   const config = state.settings.leave;
   if (!config) throw new Error('请先启用请假二维码。');
-  const result = await leaveApi('/requests', { method: 'POST', body: JSON.stringify({ formToken: config.formToken, managerToken: config.managerToken }) });
-  state.leaveRequests = result.rows || [];
+  state.leaveRequests = await loadLeaveRequests();
   await persist();
   notify('请假记录已刷新');
 }
 async function updateLeaveRequest(id, status) {
-  const config = state.settings.leave;
-  await leaveApi('/review', { method: 'POST', body: JSON.stringify({ formToken: config.formToken, managerToken: config.managerToken, id, status }) });
+  await reviewLeaveRequest(id, status);
   await refreshLeaveRequests();
 }
 function leaveManagementView() {
