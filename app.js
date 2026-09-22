@@ -1,14 +1,14 @@
-import { APP_VERSION, uid, now, clean, dateFromId, gradeStats, terms, isFailed, emptyState, hasSecurity, unlockSecurity, loadState, loadAccountState, saveAccountState, openLocalFiles, putFile, getFile, allFiles, putFiles, previewWorkbook, exportSheets } from './data.js';
+import { APP_VERSION, uid, now, clean, dateFromId, gradeStats, terms, isFailed, emptyState, hasSecurity, unlockSecurity, loadState, openLocalFiles, putFile, getFile, allFiles, putFiles, previewWorkbook, exportSheets } from './data.js';
 import { COLUMNS, blankTemplate, createWorkbook, readWorkbook } from './xlsx.js';
 import { makePackage, readPackage, mergePackage, packageName, stamp } from './transfer.js';
 import { unzipSync } from './vendor/fflate.js';
-import { account, restoreAccount, signIn, register, sendResetEmail, signOut, loadCloudState, saveCloudState } from './firebase.js';
+import { account, restoreAccount, signIn, register, sendRegistrationCode, sendResetCode, resetPassword, signOut, loadCloudState, saveCloudState } from './cloudbase.js';
 
 const app = document.querySelector('#app');
 const modalRoot = document.querySelector('#modal-root');
 const toastEl = document.querySelector('#toast');
 const inputs = { xlsx: document.querySelector('#xlsx-input'), photozip: document.querySelector('#photozip-input'), package: document.querySelector('#package-input') };
-let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer, localMigrationAvailable = false, cloudSyncStatus = '未同步', cloudSyncAt = '';
+let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer, localMigrationAvailable = false, cloudSyncStatus = '未同步', cloudSyncAt = '', registrationDraft, resetDraft;
 const today = () => new Date().toISOString().slice(0, 10);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 const fmtDate = value => clean(value) ? esc(clean(value).slice(0, 10)) : '—';
@@ -32,6 +32,7 @@ const flatIcon = name => ({
   dorm: '<svg viewBox="0 0 24 24"><path d="M4 21V4h16v17M8 8h2M14 8h2M8 12h2M14 12h2M10 21v-5h4v5"/></svg>'
 }[name] || '');
 const releases = [
+  { version: '1.0.20', updatedAt: '2026-09-22 11:30', notes: ['切换为腾讯云 CloudBase 账号与数据服务，学生资料按账号直接写入云端。', '登录改为账号或邮箱加密码；邮箱验证码仅用于注册邮箱核验和忘记密码后的重置。'] },
   { version: '1.0.18', updatedAt: '2026-09-22 11:00', notes: ['新增邮箱账号登录、注册和邮件重置密码。', '学生资料按账号分别同步到云端；证件照和截图继续仅保存在本机。'] },
   { version: '1.0.17', updatedAt: '2026-09-22 10:15', notes: ['宿舍分布图与 Excel 改为横向房间号、纵向楼层，楼层从高到低排列。', '宿舍分布图左右滑动时，楼层列保持固定。'] },
   { version: '1.0.16', updatedAt: '2026-09-22 10:00', notes: ['学生详情中的敏感信息改为一键显示或隐藏。', '学生搜索会在输入时即时筛选并提示无匹配结果。'] },
@@ -83,24 +84,26 @@ function closeModal() { modalRoot.innerHTML = ''; }
 const field = (label, name, value = '', type = 'text', extra = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><input id="f-${esc(name)}" name="${esc(name)}" type="${type}" value="${esc(value)}" ${extra}></div>`;
 const area = (label, name, value = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><textarea id="f-${esc(name)}" name="${esc(name)}">${esc(value)}</textarea></div>`;
 const choose = (label, name, options, current = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><select id="f-${esc(name)}" name="${esc(name)}">${options.map(option => `<option value="${esc(option)}" ${option === current ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div>`;
-async function persist() { const user = account(); if (!user) throw new Error('请先登录'); await saveAccountState(user.uid, state); cloudSyncStatus = '有未同步修改'; render(); if (confirm('数据已保存在本机，是否现在同步到云端？')) await syncCloudNow(); }
+async function persist() { const user = account(); if (!user) throw new Error('请先登录'); cloudSyncStatus = '同步中…'; render(); try { await saveCloudState(state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); } catch (error) { cloudSyncStatus = '同步失败'; notify(error.message || '同步失败，请检查网络后重试', true); } render(); }
 async function syncCloudNow() { cloudSyncStatus = '同步中…'; render(); try { await saveCloudState(state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); notify('已同步到云端'); } catch (error) { cloudSyncStatus = '同步失败'; notify(error.message || '同步失败，请检查网络后重试', true); } render(); }
 function setView(next) { view = next; if (next !== 'work') workModule = ''; render(); window.scrollTo(0, 0); }
 
 async function gate(mode = 'signin') {
   const saved = await restoreAccount();
-  if (saved) { localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadAccountState(saved.uid); if (!state) { try { state = await loadCloudState(emptyState); await saveAccountState(saved.uid, state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); } catch { state = emptyState(); cloudSyncStatus = '离线，尚未同步'; } } else cloudSyncStatus = '本机资料已加载'; selectedTerm = terms(state)[0] || ''; render(); return; }
+  if (saved) { localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); try { state = await loadCloudState(emptyState); cloudSyncStatus = '已同步'; cloudSyncAt = now(); selectedTerm = terms(state)[0] || ''; render(); return; } catch (error) { signOut(); notify(error.message || '无法读取云端资料', true); } }
   const creating = mode === 'register';
-  app.innerHTML = `<div class="lock-page"><div class="lock-card"><div class="lock-mark">档</div><h1>${creating ? '创建账号' : '欢迎回来'}</h1><p>${creating ? '使用邮箱创建个人工作台。学生资料只会同步到你的账号。' : '使用邮箱登录，查看属于你的学生资料。'}</p><form id="gate-form">${field('邮箱','email','','email','required autocomplete="email" inputmode="email"')}${field('密码','password','','password','required minlength="6" autocomplete="current-password"')}${creating ? field('确认密码','confirm','','password','required minlength="6" autocomplete="new-password"') : ''}<button class="btn" type="submit">${creating ? '创建并进入' : '登录'}</button></form><div class="gate-links">${creating ? '<button type="button" id="show-signin">已有账号，去登录</button>' : '<button type="button" id="show-register">创建新账号</button><button type="button" id="reset-password">忘记密码</button>'}</div><div class="lock-foot">附件仅保存在当前设备，不会上传云端。</div></div></div>`;
+  const verifying = mode === 'register-code';
+  app.innerHTML = `<div class="lock-page"><div class="lock-card"><div class="lock-mark">档</div><h1>${verifying ? '验证邮箱' : creating ? '创建账号' : '欢迎回来'}</h1><p>${verifying ? `验证码已发送至 ${esc(registrationDraft?.email || '')}，用于确认注册邮箱。` : creating ? '注册后，学生资料仅同步到你的账号。' : '使用账号或邮箱和密码登录。'}</p><form id="gate-form">${verifying ? field('邮箱验证码','code','','text','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"') : `${creating ? field('账号','username','','text','required minlength="5" maxlength="24" autocomplete="username"') : field('账号或邮箱','username','','text','required autocomplete="username"')}${creating ? field('邮箱','email','','email','required autocomplete="email" inputmode="email"') : ''}${field('密码','password','','password','required minlength="8" autocomplete="current-password"')}${creating ? field('确认密码','confirm','','password','required minlength="8" autocomplete="new-password"') : ''}`}<button class="btn" type="submit">${verifying ? '完成注册' : creating ? '获取注册验证码' : '登录'}</button></form><div class="gate-links">${verifying ? '<button type="button" id="show-register">返回修改注册信息</button>' : creating ? '<button type="button" id="show-signin">已有账号，去登录</button>' : '<button type="button" id="show-register">创建新账号</button><button type="button" id="reset-password">忘记密码</button>'}</div><div class="lock-foot">附件仅保存在当前设备，不会上传云端。</div></div></div>`;
   app.querySelector('#show-signin')?.addEventListener('click', () => gate('signin'));
   app.querySelector('#show-register')?.addEventListener('click', () => gate('register'));
   app.querySelector('#reset-password')?.addEventListener('click', () => resetPasswordForm());
   app.querySelector('#gate-form').addEventListener('submit', async event => {
-    event.preventDefault(); const form = new FormData(event.currentTarget), email = clean(form.get('email')), password = String(form.get('password'));
+    event.preventDefault(); const form = new FormData(event.currentTarget), password = String(form.get('password'));
     try {
-      if (creating) { if (password !== String(form.get('confirm'))) throw new Error('两次输入的密码不一致'); await register(email, password); }
-      else await signIn(email, password);
-      localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadAccountState(account().uid) || await loadCloudState(emptyState); await saveAccountState(account().uid, state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); selectedTerm = terms(state)[0] || ''; render();
+      if (verifying) await register({ ...registrationDraft, verificationCode: clean(form.get('code')) });
+      else if (creating) { const username = clean(form.get('username')), email = clean(form.get('email')); if (password !== String(form.get('confirm'))) throw new Error('两次输入的密码不一致'); registrationDraft = { username, email, password, verificationId: await sendRegistrationCode(email) }; notify('验证码已发送，请查收邮箱'); return gate('register-code'); }
+      else await signIn(clean(form.get('username')), password);
+      localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadCloudState(emptyState); cloudSyncStatus = '已同步'; cloudSyncAt = now(); selectedTerm = terms(state)[0] || ''; render();
     } catch (error) { notify(error.message || String(error), true); }
   });
 }
@@ -318,7 +321,10 @@ function photoForm() {
 }
 function thresholdForm() { showModal('设置挂科预警', `${field('本学期挂科达到几门时提醒','threshold',state.settings.threshold,'number','required min="1" max="30"')}`, '保存规则', async form => { state.settings.threshold = Math.max(1, Math.min(30, Number(form.get('threshold')) || 1)); await persist(); notify('预警规则已更新'); }); }
 function resetPasswordForm() {
-  showModal('重置密码', `${field('账号邮箱','email',account()?.email || '','','email','required autocomplete="email"')}<p class="inline-note">系统将向该邮箱发送重置链接。打开链接并设置新密码后，再回到这里登录。</p>`, '发送重置邮件', async form => { await sendResetEmail(clean(form.get('email'))); notify('重置邮件已发送，请前往邮箱完成验证'); });
+  showModal('重置密码', `${field('注册邮箱','email',account()?.email || '','','email','required autocomplete="email"')}<p class="inline-note">验证码只用于验证身份和重置密码，不用于日常登录。</p>`, '发送验证码', async form => { const email = clean(form.get('email')); resetDraft = { email, verificationId: await sendResetCode(email) }; resetPasswordCodeForm(); });
+}
+function resetPasswordCodeForm() {
+  showModal('设置新密码', `${field('邮箱验证码','code','','text','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"')}${field('新密码','password','','password','required minlength="8" autocomplete="new-password"')}${field('确认新密码','confirm','','password','required minlength="8" autocomplete="new-password"')}<p class="inline-note">密码至少 8 位，建议同时使用字母、数字和符号。</p>`, '确认重置', async form => { const password = String(form.get('password')); if (password !== String(form.get('confirm'))) throw new Error('两次输入的密码不一致'); await resetPassword({ ...resetDraft, password, verificationCode: clean(form.get('code')) }); notify('密码已重置，请使用新密码登录'); gate('signin'); });
 }
 function migrateLocalDataForm() {
   showModal('迁移本机资料', `${field('原 6 位本机密码','password','','password','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6"')}<p class="inline-note">会将原有学生资料同步到当前账号；照片和截图仍留在本机。</p>`, '开始迁移', async form => { await unlockSecurity(String(form.get('password'))); state = await loadState(); await persist(); localMigrationAvailable = false; notify('本机资料已同步到当前账号'); });
