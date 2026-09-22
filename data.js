@@ -1,6 +1,6 @@
 import { COLUMNS, STUDENT_EXPORT_COLUMNS, STUDENT_KNOWN_COLUMNS } from './xlsx.js';
 
-export const APP_VERSION = '1.0.23';
+export const APP_VERSION = '1.0.24';
 export const emptyState = () => ({ schema: 1, students: {}, grades: [], funding: [], records: [], settings: { threshold: 1 }, updatedAt: new Date().toISOString() });
 export const uid = () => crypto.randomUUID?.() || [...crypto.getRandomValues(new Uint8Array(16))].map(v => v.toString(16).padStart(2, '0')).join('');
 export const now = () => new Date().toISOString();
