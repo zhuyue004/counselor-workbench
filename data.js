@@ -1,6 +1,6 @@
 import { COLUMNS, STUDENT_EXPORT_COLUMNS, STUDENT_KNOWN_COLUMNS } from './xlsx.js';
 
-export const APP_VERSION = '1.0.22';
+export const APP_VERSION = '1.0.23';
 export const emptyState = () => ({ schema: 1, students: {}, grades: [], funding: [], records: [], settings: { threshold: 1 }, updatedAt: new Date().toISOString() });
 export const uid = () => crypto.randomUUID?.() || [...crypto.getRandomValues(new Uint8Array(16))].map(v => v.toString(16).padStart(2, '0')).join('');
 export const now = () => new Date().toISOString();
@@ -234,3 +234,4 @@ export function exportSheets(state) {
     工作记录: [COLUMNS.工作记录, ...state.records.map(r => [r.id, r.studentId, r.type, r.date, r.subject, r.attention, r.source, r.summary, r.todo, r.outcome, r.dueDate, r.done ? '已完成' : '未完成'])]
   };
 }
+

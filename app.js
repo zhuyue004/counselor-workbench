@@ -8,9 +8,10 @@ const app = document.querySelector('#app');
 const modalRoot = document.querySelector('#modal-root');
 const toastEl = document.querySelector('#toast');
 const inputs = { xlsx: document.querySelector('#xlsx-input'), photozip: document.querySelector('#photozip-input'), package: document.querySelector('#package-input') };
-let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer, localMigrationAvailable = false, cloudSyncStatus = '未同步', cloudSyncAt = '', registrationDraft, resetDraft, syncTimer, localRevision = 0;
+let state, view = 'home', selectedId = '', detailTab = 'info', search = '', selectedTerm = '', workModule = '', workSearch = '', todoFilter = 'all', classFilter = '', sensitiveVisible = { phone: false, parentPhone: false, idNumber: false, address: false }, photoUrl = '', toastTimer, localMigrationAvailable = false, cloudSyncStatus = '本机资料', cloudSyncAt = '', registrationDraft, resetDraft, localRevision = 0;
 const today = () => new Date().toISOString().slice(0, 10);
 const dirtyKey = accountId => `counselor-workbench-cloud-dirty:${accountId}`;
+const LOCAL_WORKSPACE_ID = 'local-workspace';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 const fmtDate = value => clean(value) ? esc(clean(value).slice(0, 10)) : '—';
 const maskId = value => value ? `${esc(value.slice(0, 4))}**********${esc(value.slice(-4))}` : '—';
@@ -33,6 +34,7 @@ const flatIcon = name => ({
   dorm: '<svg viewBox="0 0 24 24"><path d="M4 21V4h16v17M8 8h2M14 8h2M8 12h2M14 12h2M10 21v-5h4v5"/></svg>'
 }[name] || '');
 const releases = [
+  { version: '1.0.23', updatedAt: '2026-09-22 12:30', notes: ['打开应用直接进入本机工作台，不再要求登录。', '学生资料仅在本机保存；点击云端同步时才登录账号并上传当前资料。'] },
   { version: '1.0.22', updatedAt: '2026-09-22 12:00', notes: ['注册时将“账号”改为中文用户名，要求至少两个汉字。', '用户名用于显示；登录继续使用注册邮箱和密码。'] },
   { version: '1.0.21', updatedAt: '2026-09-22 11:45', notes: ['学生资料改为本机缓存优先，日常查看无需访问云端。', '资料变更会自动合并同步到 CloudBase，也可在设置中立即同步。'] },
   { version: '1.0.20', updatedAt: '2026-09-22 11:30', notes: ['切换为腾讯云 CloudBase 账号与数据服务，学生资料按账号直接写入云端。', '登录改为账号或邮箱加密码；邮箱验证码仅用于注册邮箱核验和忘记密码后的重置。'] },
@@ -87,14 +89,11 @@ function closeModal() { modalRoot.innerHTML = ''; }
 const field = (label, name, value = '', type = 'text', extra = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><input id="f-${esc(name)}" name="${esc(name)}" type="${type}" value="${esc(value)}" ${extra}></div>`;
 const area = (label, name, value = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><textarea id="f-${esc(name)}" name="${esc(name)}">${esc(value)}</textarea></div>`;
 const choose = (label, name, options, current = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><select id="f-${esc(name)}" name="${esc(name)}">${options.map(option => `<option value="${esc(option)}" ${option === current ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div>`;
-async function persist() { const user = account(); if (!user) throw new Error('请先登录'); localRevision++; await saveAccountState(user.uid, state); localStorage.setItem(dirtyKey(user.uid), '1'); cloudSyncStatus = '等待自动同步'; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncCloudNow(false), 2500); render(); }
-async function syncCloudNow(showNotice = true) { const user = account(); if (!user) return; clearTimeout(syncTimer); cloudSyncStatus = '同步中…'; render(); try { await saveCloudState(state); await saveAccountState(user.uid, state); localStorage.removeItem(dirtyKey(user.uid)); cloudSyncStatus = '已同步'; cloudSyncAt = now(); if (showNotice) notify('已同步到云端'); } catch (error) { cloudSyncStatus = '同步失败，将在下次打开或修改时重试'; if (showNotice) notify(error.message || '同步失败，请检查网络后重试', true); } render(); }
-async function refreshCloudState() { const user = account(); if (!user || localStorage.getItem(dirtyKey(user.uid))) return syncCloudNow(false); const revision = localRevision; try { const remote = await loadCloudState(emptyState); if (revision !== localRevision) return; state = remote; await saveAccountState(user.uid, state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); render(); } catch { cloudSyncStatus = '离线，正在使用本机资料'; render(); } }
+async function persist() { localRevision++; await saveAccountState(LOCAL_WORKSPACE_ID, state); cloudSyncStatus = account() ? '本机资料已保存，等待手动同步' : '本机资料已保存'; render(); }
+async function syncCloudNow(showNotice = true) { const user = account(); if (!user) { if (showNotice) gate('signin'); return; } cloudSyncStatus = '同步中…'; render(); try { await saveCloudState(state); await saveAccountState(LOCAL_WORKSPACE_ID, state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); if (showNotice) notify('已同步到云端'); } catch (error) { cloudSyncStatus = '同步失败'; if (showNotice) notify(error.message || '同步失败，请检查网络后重试', true); } render(); }
 function setView(next) { view = next; if (next !== 'work') workModule = ''; render(); window.scrollTo(0, 0); }
 
 async function gate(mode = 'signin') {
-  const saved = await restoreAccount();
-  if (saved) { localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); const cached = await loadAccountState(saved.uid); if (cached) { state = cached; cloudSyncStatus = localStorage.getItem(dirtyKey(saved.uid)) ? '等待自动同步' : '本机资料已加载'; selectedTerm = terms(state)[0] || ''; render(); refreshCloudState(); return; } try { state = await loadCloudState(emptyState); await saveAccountState(saved.uid, state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); selectedTerm = terms(state)[0] || ''; render(); return; } catch (error) { signOut(); notify(error.message || '无法读取云端资料', true); } }
   const creating = mode === 'register';
   const verifying = mode === 'register-code';
   app.innerHTML = `<div class="lock-page"><div class="lock-card"><div class="lock-mark">档</div><h1>${verifying ? '验证邮箱' : creating ? '创建账号' : '欢迎回来'}</h1><p>${verifying ? `验证码已发送至 ${esc(registrationDraft?.email || '')}，用于确认注册邮箱。` : creating ? '用户名用于显示；登录使用注册邮箱和密码。' : '使用账号或邮箱和密码登录。'}</p><form id="gate-form">${verifying ? field('邮箱验证码','code','','text','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"') : `${creating ? field('用户名','displayName','','text','required minlength="2" maxlength="20" autocomplete="name"') : field('账号或邮箱','username','','text','required autocomplete="username"')}${creating ? field('邮箱','email','','email','required autocomplete="email" inputmode="email"') : ''}${field('密码','password','','password','required minlength="8" autocomplete="current-password"')}${creating ? field('确认密码','confirm','','password','required minlength="8" autocomplete="new-password"') : ''}`}<button class="btn" type="submit">${verifying ? '完成注册' : creating ? '获取注册验证码' : '登录'}</button></form><div class="gate-links">${verifying ? '<button type="button" id="show-register">返回修改注册信息</button>' : creating ? '<button type="button" id="show-signin">已有账号，去登录</button>' : '<button type="button" id="show-register">创建新账号</button><button type="button" id="reset-password">忘记密码</button>'}</div><div class="lock-foot">附件仅保存在当前设备，不会上传云端。</div></div></div>`;
@@ -107,9 +106,22 @@ async function gate(mode = 'signin') {
       if (verifying) await register({ ...registrationDraft, verificationCode: clean(form.get('code')) });
       else if (creating) { const displayName = clean(form.get('displayName')), email = clean(form.get('email')); if (!/^[\u4e00-\u9fff]{2,20}$/.test(displayName)) throw new Error('用户名请填写 2 至 20 个汉字'); if (password !== String(form.get('confirm'))) throw new Error('两次输入的密码不一致'); registrationDraft = { displayName, email, password, verificationId: await sendRegistrationCode(email) }; notify('验证码已发送，请查收邮箱'); return gate('register-code'); }
       else await signIn(clean(form.get('username')), password);
-      localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadAccountState(account().uid) || await loadCloudState(emptyState); await saveAccountState(account().uid, state); cloudSyncStatus = '本机资料已加载'; selectedTerm = terms(state)[0] || ''; render(); refreshCloudState();
+      cloudSyncStatus = '已登录，正在同步本机资料'; render(); await syncCloudNow(true);
     } catch (error) { notify(error.message || String(error), true); }
   });
+}
+
+async function bootLocalWorkspace() {
+  const saved = await restoreAccount();
+  await openLocalFiles();
+  state = await loadAccountState(LOCAL_WORKSPACE_ID);
+  if (!state && saved) state = await loadAccountState(saved.uid);
+  if (!state) state = emptyState();
+  await saveAccountState(LOCAL_WORKSPACE_ID, state);
+  localMigrationAvailable = await hasSecurity();
+  cloudSyncStatus = saved ? '本机资料已加载，可手动同步' : '本机资料已加载';
+  selectedTerm = terms(state)[0] || '';
+  render();
 }
 
 function shell(body) {
@@ -234,17 +246,20 @@ function workDetailView() {
 }
 function dataView() {
   const current = releases[0], user = account();
-  return `<div class="toolbar"><h2>设置</h2></div><div class="section-title"><h2>账号</h2></div><div class="panel"><div class="file-card"><h3>${esc(user?.email || '未登录')}</h3><p>学生资料仅同步到此账号。</p><div class="btn-row"><button class="btn ghost" data-action="reset-password">重置密码</button><button class="btn secondary" data-action="sign-out">退出登录</button></div></div></div><div class="section-title"><h2>Excel 模板</h2></div><div class="panel"><div class="file-card"><h3>空白固定模板</h3><button class="btn secondary" data-action="template">下载空白模板</button></div><div class="file-card"><h3>导入 Excel</h3><button class="btn secondary" data-action="import-xlsx">选择 Excel 文件</button></div><div class="file-card"><h3>导出当前数据</h3><button class="btn secondary" data-action="export-xlsx">导出 Excel</button></div></div><div class="section-title"><h2>离线附件与备份</h2></div><div class="panel"><div class="file-card"><h3>证件照批量导入</h3><p>证件照和工作截图仅保存于这台设备。</p><button class="btn ghost" data-action="import-photos">选择照片 ZIP</button></div><div class="file-card"><h3>导出加密数据包</h3><p>上次备份：${state.settings.lastExportedAt ? esc(state.settings.lastExportedAt.replace('T',' ').slice(0,16)) : '尚未备份'}</p><button class="btn" data-action="export-package">生成传输包 / 备份</button></div><div class="file-card"><h3>导入加密数据包</h3><button class="btn ghost" data-action="import-package">选择数据包 ZIP</button></div></div><div class="section-title"><h2>版本</h2></div><button class="version-card" data-action="version-history"><span><strong>v${esc(APP_VERSION)}</strong><small>更新于 ${esc(current.updatedAt)}</small></span><span class="chevron">›</span></button>`;
+  const accountCard = user
+    ? `<h3>${esc(user.email || user.username)}</h3><p>已登录；同步会将当前设备的学生资料写入此账号。</p><div class="btn-row"><button class="btn ghost" data-action="reset-password">重置密码</button><button class="btn secondary" data-action="sign-out">退出登录</button></div>`
+    : `<h3>未登录云端账号</h3><p>学生资料保存在当前设备。需要备份到云端时，再登录账号同步。</p><button class="btn secondary" data-action="sync-cloud">登录并同步</button>`;
+  return `<div class="toolbar"><h2>设置</h2></div><div class="section-title"><h2>云端账号</h2></div><div class="panel"><div class="file-card">${accountCard}</div></div><div class="section-title"><h2>Excel 模板</h2></div><div class="panel"><div class="file-card"><h3>空白固定模板</h3><button class="btn secondary" data-action="template">下载空白模板</button></div><div class="file-card"><h3>导入 Excel</h3><button class="btn secondary" data-action="import-xlsx">选择 Excel 文件</button></div><div class="file-card"><h3>导出当前数据</h3><button class="btn secondary" data-action="export-xlsx">导出 Excel</button></div></div><div class="section-title"><h2>离线附件与备份</h2></div><div class="panel"><div class="file-card"><h3>证件照批量导入</h3><p>证件照和工作截图仅保存于这台设备。</p><button class="btn ghost" data-action="import-photos">选择照片 ZIP</button></div><div class="file-card"><h3>导出加密数据包</h3><p>上次备份：${state.settings.lastExportedAt ? esc(state.settings.lastExportedAt.replace('T',' ').slice(0,16)) : '尚未备份'}</p><button class="btn" data-action="export-package">生成传输包 / 备份</button></div><div class="file-card"><h3>导入加密数据包</h3><button class="btn ghost" data-action="import-package">选择数据包 ZIP</button></div></div><div class="section-title"><h2>版本</h2></div><button class="version-card" data-action="version-history"><span><strong>v${esc(APP_VERSION)}</strong><small>更新于 ${esc(current.updatedAt)}</small></span><span class="chevron">›</span></button>`;
 }
 
 function versionHistory() {
   showModal('历史更新记录', `<div class="release-list">${releases.map(release => `<section class="release"><div><strong>v${esc(release.version)}</strong><small>${esc(release.updatedAt)}</small></div><ul>${release.notes.map(note => `<li>${esc(note)}</li>`).join('')}</ul></section>`).join('')}</div>`, '关闭', async () => {});
 }
 function render() {
-  if (!state) return gate();
+  if (!state) return;
   const body = view === 'home' ? homeView() : view === 'students' ? studentsView() : view === 'work' ? workView() : view === 'alerts' ? alertsView() : dataView();
   shell(body);
-  if (view === 'data') document.querySelector('.content').insertAdjacentHTML('afterbegin', `<div class="section-title"><h2>云端同步</h2></div><div class="panel"><div class="file-card"><h3>${esc(cloudSyncStatus)}</h3><p>最近同步：${cloudSyncAt ? esc(cloudSyncAt.replace('T',' ').slice(0,16)) : '尚未同步'}</p><button class="btn secondary" data-action="sync-cloud" ${cloudSyncStatus === '同步中…' ? 'disabled' : ''}>立即同步</button></div></div>`);
+  if (view === 'data') { const user = account(); document.querySelector('.content').insertAdjacentHTML('afterbegin', `<div class="section-title"><h2>云端同步</h2></div><div class="panel"><div class="file-card"><h3>${esc(cloudSyncStatus)}</h3><p>最近同步：${cloudSyncAt ? esc(cloudSyncAt.replace('T',' ').slice(0,16)) : '尚未同步'}</p><button class="btn secondary" data-action="sync-cloud" ${cloudSyncStatus === '同步中…' ? 'disabled' : ''}>${user ? '同步当前资料' : '登录并同步'}</button></div></div>`); }
   if (view === 'data' && localMigrationAvailable) document.querySelector('.content').insertAdjacentHTML('afterbegin', '<div class="section-title"><h2>迁移原本机资料</h2></div><div class="panel"><div class="file-card"><h3>原 6 位密码保护的资料</h3><p>将这台设备已有学生资料同步到当前账号；照片和截图继续保存在本机。</p><button class="btn ghost" data-action="migrate-local">开始迁移</button></div></div>');
   const searchInput = document.querySelector('#student-search');
   if (searchInput) {
@@ -328,7 +343,7 @@ function resetPasswordForm() {
   showModal('重置密码', `${field('注册邮箱','email',account()?.email || '','','email','required autocomplete="email"')}<p class="inline-note">验证码只用于验证身份和重置密码，不用于日常登录。</p>`, '发送验证码', async form => { const email = clean(form.get('email')); resetDraft = { email, verificationId: await sendResetCode(email) }; resetPasswordCodeForm(); });
 }
 function resetPasswordCodeForm() {
-  showModal('设置新密码', `${field('邮箱验证码','code','','text','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"')}${field('新密码','password','','password','required minlength="8" autocomplete="new-password"')}${field('确认新密码','confirm','','password','required minlength="8" autocomplete="new-password"')}<p class="inline-note">密码至少 8 位，建议同时使用字母、数字和符号。</p>`, '确认重置', async form => { const password = String(form.get('password')); if (password !== String(form.get('confirm'))) throw new Error('两次输入的密码不一致'); await resetPassword({ ...resetDraft, password, verificationCode: clean(form.get('code')) }); notify('密码已重置，请使用新密码登录'); gate('signin'); });
+  showModal('设置新密码', `${field('邮箱验证码','code','','text','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"')}${field('新密码','password','','password','required minlength="8" autocomplete="new-password"')}${field('确认新密码','confirm','','password','required minlength="8" autocomplete="new-password"')}<p class="inline-note">密码至少 8 位，建议同时使用字母、数字和符号。</p>`, '确认重置', async form => { const password = String(form.get('password')); if (password !== String(form.get('confirm'))) throw new Error('两次输入的密码不一致'); await resetPassword({ ...resetDraft, password, verificationCode: clean(form.get('code')) }); signOut(); cloudSyncStatus = '密码已更新；下次同步时使用新密码登录'; render(); notify('密码已重置'); });
 }
 function migrateLocalDataForm() {
   showModal('迁移本机资料', `${field('原 6 位本机密码','password','','password','required inputmode="numeric" pattern="[0-9]{6}" maxlength="6"')}<p class="inline-note">会将原有学生资料同步到当前账号；照片和截图仍留在本机。</p>`, '开始迁移', async form => { await unlockSecurity(String(form.get('password'))); state = await loadState(); await persist(); localMigrationAvailable = false; notify('本机资料已同步到当前账号'); });
@@ -383,7 +398,7 @@ app.addEventListener('click', async event => {
   const button = event.target.closest('[data-action]'); if (!button) return;
   try {
     switch(button.dataset.action) {
-      case 'lock': signOut(); state = undefined; selectedId = ''; gate(); break;
+      case 'lock': signOut(); cloudSyncStatus = '已退出云端账号，本机资料仍可使用'; render(); notify('已退出云端账号'); break;
       case 'back-students': selectedId = ''; render(); break;
       case 'back-work': workModule = ''; render(); break;
       case 'work-module': workModule = button.dataset.module; render(); window.scrollTo(0, 0); break;
@@ -406,7 +421,7 @@ app.addEventListener('click', async event => {
       case 'threshold': thresholdForm(); break;
       case 'reset-password': resetPasswordForm(); break;
       case 'migrate-local': migrateLocalDataForm(); break;
-      case 'sign-out': signOut(); state = undefined; selectedId = ''; gate(); break;
+      case 'sign-out': signOut(); cloudSyncStatus = '已退出云端账号，本机资料仍可使用'; render(); notify('已退出云端账号'); break;
       case 'sync-cloud': await syncCloudNow(); break;
       case 'version-history': versionHistory(); break;
       case 'toggle-sensitive': { const next = !Object.values(sensitiveVisible).every(Boolean); Object.keys(sensitiveVisible).forEach(key => sensitiveVisible[key] = next); render(); break; }
@@ -430,7 +445,7 @@ inputs.package.addEventListener('change', async event => { const file = event.ta
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) hiddenAt = Date.now();
-  else if (state && hiddenAt && Date.now() - hiddenAt > 5 * 60 * 1000) { signOut(); state = undefined; selectedId = ''; closeModal(); gate(); }
+  else if (hiddenAt && Date.now() - hiddenAt > 5 * 60 * 1000) { signOut(); cloudSyncStatus = '本机资料已加载'; render(); }
 });
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(() => {});
-gate().catch(error => { app.innerHTML = `<div class="empty"><strong>应用无法启动</strong><p>${esc(error.message)}</p></div>`; });
+bootLocalWorkspace().catch(error => { app.innerHTML = `<div class="empty"><strong>应用无法启动</strong><p>${esc(error.message)}</p></div>`; });
