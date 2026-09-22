@@ -31,6 +31,7 @@ const flatIcon = name => ({
   dorm: '<svg viewBox="0 0 24 24"><path d="M4 21V4h16v17M8 8h2M14 8h2M8 12h2M14 12h2M10 21v-5h4v5"/></svg>'
 }[name] || '');
 const releases = [
+  { version: '1.0.16', updatedAt: '2026-09-22 10:00', notes: ['学生详情中的敏感信息改为一键显示或隐藏。', '学生搜索会在输入时即时筛选并提示无匹配结果。'] },
   { version: '1.0.15', updatedAt: '2026-09-22 09:15', notes: ['宿舍分布支持按楼号、楼层、房间号生成分布图和 Excel。'] },
   { version: '1.0.14', updatedAt: '2026-09-22 09:00', notes: ['本人电话、家长电话和身份证号支持独立显示或隐藏。', '工作模块新增按宿舍聚合的宿舍分布。'] },
   { version: '1.0.13', updatedAt: '2026-09-21 17:22', notes: ['待办模块支持直接新增待办，并显示今日和逾期数量。'] },
@@ -115,7 +116,7 @@ function studentsView() {
   if (selectedId && student()) return detailView();
   const query = search.toLowerCase(), classes = [...new Set(Object.values(state.students).map(s => s.className || '未分班'))].sort((a,b) => a.localeCompare(b,'zh-CN')), filtered = Object.values(state.students).filter(s => (!classFilter || (s.className || '未分班') === classFilter) && [s.id,s.name,s.className,s.classRole,s.major,s.dorm].some(v => clean(v).toLowerCase().includes(query))).sort((a,b) => clean(a.className).localeCompare(clean(b.className),'zh-CN') || clean(a.id).localeCompare(clean(b.id),'zh-CN'));
   const groups = filtered.reduce((result, s) => { const key = s.className || '未分班'; (result[key] ||= []).push(s); return result; }, {});
-  return `<div class="toolbar"><h2>学生 <span id="student-count" class="muted tiny">${filtered.length}</span></h2><div class="toolbar-actions"><button class="btn small ghost" data-action="class-filter">${esc(classFilter || '全部班级')}</button><button class="btn small" data-action="add-student">＋ 新增</button></div></div><div class="search-wrap"><input class="search" id="student-search" type="search" placeholder="搜索姓名、学号、班级、职务、专业" value="${esc(search)}"></div>${filtered.length ? Object.entries(groups).map(([group, rows]) => `<section class="student-group"><h3>${esc(group)} <small>${rows.length}</small></h3><div class="panel list">${rows.map(s => `<button class="list-row student-row" data-student="${esc(s.id)}" data-search="${esc([s.id,s.name,s.className,s.classRole,s.major,s.dorm].map(clean).join(' ').toLowerCase())}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.className || '未分班')} · ${esc(s.id)}</small></div>${s.classRole ? `<span class="role-tag">${esc(s.classRole)}</span>` : ''}<span class="chevron">›</span></button>`).join('')}</div></section>`).join('') : `<div class="panel">${empty(search ? '没有匹配的学生' : '还没有学生档案')}</div>`}`;
+  return `<div class="toolbar"><h2>学生 <span id="student-count" class="muted tiny">${filtered.length}</span></h2><div class="toolbar-actions"><button class="btn small ghost" data-action="class-filter">${esc(classFilter || '全部班级')}</button><button class="btn small" data-action="add-student">＋ 新增</button></div></div><div class="search-wrap"><input class="search" id="student-search" type="search" placeholder="搜索姓名、学号、班级、职务、专业" value="${esc(search)}"></div><div id="student-search-empty" class="search-empty" hidden>没有匹配的学生</div>${filtered.length ? Object.entries(groups).map(([group, rows]) => `<section class="student-group"><h3>${esc(group)} <small>${rows.length}</small></h3><div class="panel list">${rows.map(s => `<button class="list-row student-row" data-student="${esc(s.id)}" data-search="${esc([s.id,s.name,s.className,s.classRole,s.major,s.dorm].map(clean).join(' ').toLowerCase())}"><div class="avatar">${esc(studentInitial(s))}</div><div class="row-main"><strong>${esc(displayName(s.name))}</strong><small>${esc(s.className || '未分班')} · ${esc(s.id)}</small></div>${s.classRole ? `<span class="role-tag">${esc(s.classRole)}</span>` : ''}<span class="chevron">›</span></button>`).join('')}</div></section>`).join('') : `<div class="panel">${empty(search ? '没有匹配的学生' : '还没有学生档案')}</div>`}`;
 }
 function classFilterForm() { const classes = [...new Set(Object.values(state.students).map(s => s.className || '未分班'))].sort((a,b) => a.localeCompare(b,'zh-CN')); showModal('切换班级', choose('班级','className',['全部班级', ...classes], classFilter || '全部班级'), '确定', async form => { classFilter = form.get('className') === '全部班级' ? '' : clean(form.get('className')); search = ''; render(); }); }
 const dialNumber = value => clean(value).replace(/[^\d+]/g, '');
@@ -126,7 +127,7 @@ function infoItem(label, value, sensitiveKey = '') {
   const visible = !sensitiveKey || sensitiveVisible[sensitiveKey], phone = ['phone', 'parentPhone'].includes(sensitiveKey) && dialNumber(value);
   const masked = sensitiveKey === 'idNumber' ? maskId(value) : sensitiveKey === 'address' ? maskAddress(value) : maskPhone(value);
   const content = visible && phone ? `<a class="phone-link" href="tel:${esc(phone)}">${esc(value)}</a>` : esc(visible ? value || '—' : masked);
-  return `<div class="info-item"><small>${esc(label)}</small><strong>${content}</strong>${sensitiveKey ? `<button class="btn small ghost" data-action="toggle-sensitive" data-key="${sensitiveKey}" style="margin-top:7px">${visible ? '隐藏' : '显示'}</button>` : ''}</div>`;
+  return `<div class="info-item"><small>${esc(label)}</small><strong>${content}</strong></div>`;
 }
 function detailView() {
   const s = student(); const grades = state.grades.filter(g => g.studentId === s.id), funding = state.funding.filter(f => f.studentId === s.id), records = state.records.filter(r => r.studentId === s.id).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
@@ -134,7 +135,8 @@ function detailView() {
   let body = '';
   if (detailTab === 'info') {
     const fields = [['学号',s.id],['姓名',s.name],['班级',s.className],['班级职务',s.classRole],['专业',s.major],['宿舍',s.dorm],['本人电话',s.phone,'phone'],['家长电话',s.parentPhone,'parentPhone'],['家庭住址',s.address,'address'],['性别',s.gender],['民族',s.ethnicity],['出生日期',s.birthDate]];
-    body = `<div class="contact-actions">${sensitiveVisible.phone && s.phone ? `<a href="tel:${esc(dialNumber(s.phone))}">☎ 本人电话</a>` : ''}${sensitiveVisible.parentPhone && s.parentPhone ? `<a href="tel:${esc(dialNumber(s.parentPhone))}">☎ 家长电话</a>` : ''}</div><div class="panel pad"><div class="info-grid">${fields.map(([label,value,key]) => infoItem(label,value,key)).join('')}${infoItem('身份证号',s.idNumber,'idNumber')}${Object.entries(s.custom || {}).map(([k,v]) => infoItem(k,v)).join('')}</div></div><div class="btn-row" style="margin-top:12px"><button class="btn secondary" data-action="edit-student">编辑档案</button><button class="btn ghost" data-action="photo">上传证件照</button></div>`;
+    const allSensitiveVisible = Object.values(sensitiveVisible).every(Boolean);
+    body = `<div class="detail-tools"><button class="btn small ghost" data-action="toggle-sensitive">${allSensitiveVisible ? '隐藏敏感信息' : '显示敏感信息'}</button></div><div class="contact-actions">${sensitiveVisible.phone && s.phone ? `<a href="tel:${esc(dialNumber(s.phone))}">☎ 本人电话</a>` : ''}${sensitiveVisible.parentPhone && s.parentPhone ? `<a href="tel:${esc(dialNumber(s.parentPhone))}">☎ 家长电话</a>` : ''}</div><div class="panel pad"><div class="info-grid">${fields.map(([label,value,key]) => infoItem(label,value,key)).join('')}${infoItem('身份证号',s.idNumber,'idNumber')}${Object.entries(s.custom || {}).map(([k,v]) => infoItem(k,v)).join('')}</div></div><div class="btn-row" style="margin-top:12px"><button class="btn secondary" data-action="edit-student">编辑档案</button><button class="btn ghost" data-action="photo">上传证件照</button></div>`;
   } else if (detailTab === 'grades') {
     const stats = gradeStats(state,s.id,selectedTerm);
     body = `<div class="stats"><div class="stat warn"><strong>${stats.semester}</strong><span>本学期挂科</span></div><div class="stat"><strong>${stats.cumulative}</strong><span>历史累计</span></div><div class="stat"><strong>${stats.resolved}</strong><span>后来已通过</span></div></div><div class="section-title"><h2>成绩记录</h2><button class="btn small" data-action="add-grade">＋ 添加</button></div><div class="panel">${grades.length ? grades.sort((a,b) => b.term.localeCompare(a.term)).map(g => `<div class="record"><div class="record-top"><strong>${esc(courseLabel(g))}</strong><span class="badge ${isFailed(g) ? 'red' : 'green'}">${isFailed(g) ? '曾挂科' : '及格'}</span></div><p>${esc(g.term)} · 成绩 ${esc(g.score || '—')} ${g.retakeStatus ? `· ${esc(g.retakeStatus)}` : ''}</p><div class="actions"><button class="btn small ghost" data-action="edit-grade" data-id="${esc(g.id)}">编辑</button></div></div>`).join('') : empty('暂无成绩', '可手工添加或导入 Excel。')}</div>`;
@@ -228,7 +230,23 @@ function render() {
   const body = view === 'home' ? homeView() : view === 'students' ? studentsView() : view === 'work' ? workView() : view === 'alerts' ? alertsView() : dataView();
   shell(body);
   const searchInput = document.querySelector('#student-search');
-  if (searchInput) searchInput.addEventListener('input', event => { search = event.target.value; const query = search.toLowerCase(); const rows = [...document.querySelectorAll('.student-row')]; rows.forEach(row => row.hidden = !row.dataset.search.includes(query)); document.querySelectorAll('.student-group').forEach(group => group.hidden = ![...group.querySelectorAll('.student-row')].some(row => !row.hidden)); const matches = rows.filter(row => !row.hidden); const count = document.querySelector('#student-count'); if (count) count.textContent = matches.length; if (query && matches[0]) matches[0].scrollIntoView({ block: 'nearest' }); });
+  if (searchInput) {
+    const filterStudents = value => {
+      search = value;
+      const query = search.toLowerCase();
+      const rows = [...document.querySelectorAll('.student-row')];
+      rows.forEach(row => row.hidden = !row.dataset.search.includes(query));
+      document.querySelectorAll('.student-group').forEach(group => group.hidden = ![...group.querySelectorAll('.student-row')].some(row => !row.hidden));
+      const matches = rows.filter(row => !row.hidden);
+      const count = document.querySelector('#student-count');
+      const emptyHint = document.querySelector('#student-search-empty');
+      if (count) count.textContent = matches.length;
+      if (emptyHint) emptyHint.hidden = !query || matches.length > 0;
+    };
+    searchInput.addEventListener('input', event => filterStudents(event.target.value));
+    searchInput.addEventListener('compositionend', event => filterStudents(event.target.value));
+    searchInput.addEventListener('search', event => filterStudents(event.target.value));
+  }
   const workInput = document.querySelector('#work-search');
   if (workInput) workInput.addEventListener('input', event => { workSearch = event.target.value; render(); document.querySelector('#work-search')?.focus(); });
   document.querySelector('#term-select')?.addEventListener('change', event => { selectedTerm = event.target.value; render(); });
@@ -366,7 +384,7 @@ app.addEventListener('click', async event => {
       case 'threshold': thresholdForm(); break;
       case 'change-passcode': passcodeForm(); break;
       case 'version-history': versionHistory(); break;
-      case 'toggle-sensitive': sensitiveVisible[button.dataset.key] = !sensitiveVisible[button.dataset.key]; render(); break;
+      case 'toggle-sensitive': { const next = !Object.values(sensitiveVisible).every(Boolean); Object.keys(sensitiveVisible).forEach(key => sensitiveVisible[key] = next); render(); break; }
       case 'toggle-id': { const el = document.querySelector('#id-number'); el.textContent = el.textContent.includes('*') ? student().idNumber || '—' : (student().idNumber ? `${student().idNumber.slice(0,4)}**********${student().idNumber.slice(-4)}` : '—'); break; }
       case 'toggle-done': { const record = state.records.find(r => r.id === button.dataset.id); if (record) { record.done = !record.done; record.updatedAt = now(); await persist(); } break; }
       case 'open-file': { const file = await getFile(button.dataset.id); if (!file) throw new Error('附件不存在'); const url = URL.createObjectURL(file.blob); modalRoot.innerHTML = `<div class="modal-shade"><div class="modal"><div class="modal-head"><h2>${esc(file.name)}</h2><button class="close" data-close>×</button></div><img class="photo-preview" src="${url}" alt="截图"><div class="modal-actions"><button class="btn ghost" data-close>关闭</button><a class="btn" href="${url}" download="${esc(file.name)}" style="text-align:center;text-decoration:none">保存图片</a></div></div></div>`; modalRoot.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { closeModal(); URL.revokeObjectURL(url); })); break; }
