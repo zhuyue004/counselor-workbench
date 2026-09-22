@@ -43,7 +43,6 @@ export async function restoreAccount() {
     const saved = localStorage.getItem(sessionKey);
     if (!saved) return undefined;
     session = JSON.parse(saved);
-    await token();
     return account();
   } catch { signOut(); return undefined; }
 }

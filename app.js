@@ -1,4 +1,4 @@
-import { APP_VERSION, uid, now, clean, dateFromId, gradeStats, terms, isFailed, emptyState, hasSecurity, unlockSecurity, loadState, openLocalFiles, putFile, getFile, allFiles, putFiles, previewWorkbook, exportSheets } from './data.js';
+import { APP_VERSION, uid, now, clean, dateFromId, gradeStats, terms, isFailed, emptyState, hasSecurity, unlockSecurity, loadState, loadAccountState, saveAccountState, openLocalFiles, putFile, getFile, allFiles, putFiles, previewWorkbook, exportSheets } from './data.js';
 import { COLUMNS, blankTemplate, createWorkbook, readWorkbook } from './xlsx.js';
 import { makePackage, readPackage, mergePackage, packageName, stamp } from './transfer.js';
 import { unzipSync } from './vendor/fflate.js';
@@ -83,13 +83,13 @@ function closeModal() { modalRoot.innerHTML = ''; }
 const field = (label, name, value = '', type = 'text', extra = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><input id="f-${esc(name)}" name="${esc(name)}" type="${type}" value="${esc(value)}" ${extra}></div>`;
 const area = (label, name, value = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><textarea id="f-${esc(name)}" name="${esc(name)}">${esc(value)}</textarea></div>`;
 const choose = (label, name, options, current = '') => `<div class="field"><label for="f-${esc(name)}">${esc(label)}</label><select id="f-${esc(name)}" name="${esc(name)}">${options.map(option => `<option value="${esc(option)}" ${option === current ? 'selected' : ''}>${esc(option)}</option>`).join('')}</select></div>`;
-async function persist() { cloudSyncStatus = '同步中…'; try { await saveCloudState(state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); } catch (error) { cloudSyncStatus = '同步失败'; throw error; } render(); }
+async function persist() { const user = account(); if (!user) throw new Error('请先登录'); await saveAccountState(user.uid, state); cloudSyncStatus = '有未同步修改'; render(); if (confirm('数据已保存在本机，是否现在同步到云端？')) await syncCloudNow(); }
 async function syncCloudNow() { cloudSyncStatus = '同步中…'; render(); try { await saveCloudState(state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); notify('已同步到云端'); } catch (error) { cloudSyncStatus = '同步失败'; notify(error.message || '同步失败，请检查网络后重试', true); } render(); }
 function setView(next) { view = next; if (next !== 'work') workModule = ''; render(); window.scrollTo(0, 0); }
 
 async function gate(mode = 'signin') {
   const saved = await restoreAccount();
-  if (saved) { localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadCloudState(emptyState); cloudSyncStatus = '已同步'; cloudSyncAt = now(); selectedTerm = terms(state)[0] || ''; render(); return; }
+  if (saved) { localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadAccountState(saved.uid); if (!state) { try { state = await loadCloudState(emptyState); await saveAccountState(saved.uid, state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); } catch { state = emptyState(); cloudSyncStatus = '离线，尚未同步'; } } else cloudSyncStatus = '本机资料已加载'; selectedTerm = terms(state)[0] || ''; render(); return; }
   const creating = mode === 'register';
   app.innerHTML = `<div class="lock-page"><div class="lock-card"><div class="lock-mark">档</div><h1>${creating ? '创建账号' : '欢迎回来'}</h1><p>${creating ? '使用邮箱创建个人工作台。学生资料只会同步到你的账号。' : '使用邮箱登录，查看属于你的学生资料。'}</p><form id="gate-form">${field('邮箱','email','','email','required autocomplete="email" inputmode="email"')}${field('密码','password','','password','required minlength="6" autocomplete="current-password"')}${creating ? field('确认密码','confirm','','password','required minlength="6" autocomplete="new-password"') : ''}<button class="btn" type="submit">${creating ? '创建并进入' : '登录'}</button></form><div class="gate-links">${creating ? '<button type="button" id="show-signin">已有账号，去登录</button>' : '<button type="button" id="show-register">创建新账号</button><button type="button" id="reset-password">忘记密码</button>'}</div><div class="lock-foot">附件仅保存在当前设备，不会上传云端。</div></div></div>`;
   app.querySelector('#show-signin')?.addEventListener('click', () => gate('signin'));
@@ -100,7 +100,7 @@ async function gate(mode = 'signin') {
     try {
       if (creating) { if (password !== String(form.get('confirm'))) throw new Error('两次输入的密码不一致'); await register(email, password); }
       else await signIn(email, password);
-      localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadCloudState(emptyState); cloudSyncStatus = '已同步'; cloudSyncAt = now(); selectedTerm = terms(state)[0] || ''; render();
+      localMigrationAvailable = await hasSecurity(); if (!localMigrationAvailable) await openLocalFiles(); state = await loadAccountState(account().uid) || await loadCloudState(emptyState); await saveAccountState(account().uid, state); cloudSyncStatus = '已同步'; cloudSyncAt = now(); selectedTerm = terms(state)[0] || ''; render();
     } catch (error) { notify(error.message || String(error), true); }
   });
 }

@@ -108,6 +108,14 @@ export async function loadState() {
   const payload = await request(db.transaction('app').objectStore('app').get('state'));
   return payload ? JSON.parse(decode.decode(await decrypt(payload))) : emptyState();
 }
+export async function loadAccountState(accountId) {
+  const db = await openDb(); const payload = await request(db.transaction('app').objectStore('app').get(`account-state:${accountId}`));
+  return payload ? JSON.parse(decode.decode(await decrypt(payload))) : undefined;
+}
+export async function saveAccountState(accountId, state) {
+  state.updatedAt = now(); const payload = await encrypt(utf8.encode(JSON.stringify(state)));
+  const db = await openDb(); await request(db.transaction('app', 'readwrite').objectStore('app').put(payload, `account-state:${accountId}`));
+}
 export async function saveState(state) {
   state.updatedAt = now();
   const encryptedState = await encrypt(utf8.encode(JSON.stringify(state)));
