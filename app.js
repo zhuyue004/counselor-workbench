@@ -131,9 +131,9 @@ const profileMissing = student => ['姓名','班级','专业','宿舍','本人�
 const maskPhone = value => value ? `${value.slice(0,3)}****${value.slice(-4)}` : '—';
 const maskAddress = value => value ? `${value.slice(0, Math.min(6, value.length))}****` : '—';
 function infoItem(label, value, sensitiveKey = '') {
-  const visible = !sensitiveKey || sensitiveVisible[sensitiveKey], phone = ['phone', 'parentPhone'].includes(sensitiveKey) && dialNumber(value);
+  const visible = !sensitiveKey || sensitiveVisible[sensitiveKey];
   const masked = sensitiveKey === 'idNumber' ? maskId(value) : sensitiveKey === 'address' ? maskAddress(value) : maskPhone(value);
-  const content = visible && phone ? `<a class="phone-link" href="tel:${esc(phone)}">${esc(value)}</a>` : esc(visible ? value || '—' : masked);
+  const content = esc(visible ? value || '—' : masked);
   return `<div class="info-item"><small>${esc(label)}</small><strong>${content}</strong></div>`;
 }
 function detailView() {
@@ -143,7 +143,7 @@ function detailView() {
   if (detailTab === 'info') {
     const fields = [['专业',s.major],['班级',s.className],['姓名',s.name],['学号',s.id],['民族',s.ethnicity],['性别',s.gender],['本人电话',s.phone,'phone'],['家长电话',s.parentPhone,'parentPhone'],['身份证号',s.idNumber,'idNumber'],['出生日期',s.birthDate],['宿舍',s.dorm],['家庭住址',s.address,'address']];
     const allSensitiveVisible = Object.values(sensitiveVisible).every(Boolean);
-    body = `<div class="contact-actions">${sensitiveVisible.phone && s.phone ? `<a href="tel:${esc(dialNumber(s.phone))}">☎ 本人电话</a>` : ''}${sensitiveVisible.parentPhone && s.parentPhone ? `<a href="tel:${esc(dialNumber(s.parentPhone))}">☎ 家长电话</a>` : ''}</div><div class="panel pad"><div class="info-grid">${fields.map(([label,value,key]) => infoItem(label,value,key)).join('')}${Object.entries(s.custom || {}).map(([k,v]) => infoItem(k,v)).join('')}</div></div><div class="btn-row" style="margin-top:12px"><button class="btn secondary" data-action="edit-student">编辑档案</button><button class="btn ghost" data-action="toggle-sensitive">${allSensitiveVisible ? '隐藏全部信息' : '显示全部信息'}</button></div>`;
+    body = `<div class="contact-actions">${s.phone ? `<a href="tel:${esc(dialNumber(s.phone))}">☎ 本人电话</a>` : '<span class="contact-disabled">☎ 本人电话</span>'}${s.parentPhone ? `<a href="tel:${esc(dialNumber(s.parentPhone))}">☎ 家长电话</a>` : '<span class="contact-disabled">☎ 家长电话</span>'}</div><div class="panel pad"><div class="info-grid">${fields.map(([label,value,key]) => infoItem(label,value,key)).join('')}${Object.entries(s.custom || {}).map(([k,v]) => infoItem(k,v)).join('')}</div></div><div class="btn-row" style="margin-top:12px"><button class="btn secondary" data-action="edit-student">编辑档案</button><button class="btn ghost" data-action="toggle-sensitive">${allSensitiveVisible ? '隐藏全部信息' : '显示全部信息'}</button></div>`;
   } else if (detailTab === 'grades') {
     const stats = gradeStats(state,s.id,selectedTerm);
     body = `<div class="stats"><div class="stat warn"><strong>${stats.semester}</strong><span>本学期挂科</span></div><div class="stat"><strong>${stats.cumulative}</strong><span>历史累计</span></div><div class="stat"><strong>${stats.resolved}</strong><span>后来已通过</span></div></div><div class="section-title"><h2>成绩记录</h2><button class="btn small" data-action="add-grade">＋ 添加</button></div><div class="panel">${grades.length ? grades.sort((a,b) => b.term.localeCompare(a.term)).map(g => `<div class="record"><div class="record-top"><strong>${esc(courseLabel(g))}</strong><span class="badge ${isFailed(g) ? 'red' : 'green'}">${isFailed(g) ? '曾挂科' : '及格'}</span></div><p>${esc(g.term)} · 成绩 ${esc(g.score || '—')} ${g.retakeStatus ? `· ${esc(g.retakeStatus)}` : ''}</p><div class="actions"><button class="btn small ghost" data-action="edit-grade" data-id="${esc(g.id)}">编辑</button></div></div>`).join('') : empty('暂无成绩', '可手工添加或导入 Excel。')}</div>`;
